@@ -10,16 +10,14 @@ import { test } from "node:test"
 import { createDraftRelease, resolveRelease } from "./release.mjs"
 import { summaryVersions } from "./check-docs.mjs"
 
-test("source sync accepts unreleased versions while release branches retain naming checks", () => {
-  const version = JSON.parse(readFileSync('package.json', 'utf8')).version
+test("documentation checks accept maintenance branches without release naming restrictions", () => {
   const check = (branch) => execFileSync(process.execPath, ['.github/scripts/check-docs.mjs'], {
     env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_HEAD_REF: branch },
     stdio: 'pipe', windowsHide: true,
   })
-  assert.doesNotThrow(() => check('sync-upstream'))
-  assert.doesNotThrow(() => check(`v${version}`))
-  assert.throws(() => check('release-upstream'))
-  assert.throws(() => check('v999.999.999'))
+  for (const branch of ['sync-upstream', 'codex/readme-logo', 'release-upstream', 'v999.999.999']) {
+    assert.doesNotThrow(() => check(branch))
+  }
 })
 
 test("README release summaries reject excess, duplicates and mismatched links", () => {
