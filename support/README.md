@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../content/icons/logo-padded.png" width="96" height="96" alt="Jadense Logo">
+  <img src="../docs/images/jadense-logo.svg" width="96" height="88" alt="Jadense Logo">
 </p>
 
 # 支持 Jadense in Zotero

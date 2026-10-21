@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://jadense.cn/"><img src="content/icons/logo-padded.png" width="128" height="128" alt="Jadense Logo"></a>
+  <a href="https://jadense.cn/"><img src="docs/images/jadense-logo.svg" width="128" height="118" alt="Jadense Logo"></a>
 </p>
 <h1 align="center">Jadense in Zotero</h1>
 <p align="center">攻玉学术 · Zotero AI 阅读助手</p>
