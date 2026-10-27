@@ -2,6 +2,7 @@
 
 [返回 README](../README.md) · [Zotero 入门](zotero-guide.md) · [FAQ](faq.md)
 
+- [0.6.13.6 快速解析：勾选图标同步、跨行链接粘合与附录识别](#update-06136)
 - [0.6.13.5 快速解析：评价档位锚点与开源链接发现](#update-06135)
 - [0.6.13.4 快速解析：弹出列表框、默认 6 篇与输出预算](#update-06134)
 - [0.6.13.3 快速解析：思路／实验流程、开源标注与逐篇评价](#update-06133)
@@ -13,6 +14,21 @@
 - [0.6.10 引擎存储、BYOK 档位与升级](#update-0610)
 - [0.6.9 简阅、模型与翻译反馈](#simple-reading-069)
 
+<a id="update-06136"></a>
+
+## 0.6.13.6：勾掉了图标也得跟着掉，链接要真的抽得到（2026-10-27）
+
+- **「全不选」图标同步**：上一版清空的是勾选集合，但每行的复选框仍按清单初始状态显示，于是提示写「本次发送 0 篇」、下面一排全是勾。现在「全选」「全不选」共用同一个 `syncChecks`，只认 `included` 集合重画图标，文字和图标读同一份状态。
+- **跨行网址粘合**：PDF 排版常把 `https://` 留在行尾、域名换到下一行，pdf.js 取回的是两段分开的文字，旧正则一条也匹配不上。这就是「第一页明明印着项目主页却什么都没识别到」的原因。现在只有断口后面是主机名形状（`域名.顶级域`）才粘合，`https://` 后面接普通词的行尾断句不会被当成链接——回归用例分别覆盖 `Our project website is available at https:// yushi-du.github.io/COLA/`（抽到）与 `https://\nWe present a method`（不抽）。
+- **arXiv 与 DOI 落地页不算发现**：arXiv 地址只是这篇论文的托管页，指向的还是同一份稿子，不能当开源证据；`doi.org` 与 `doi.acm.org` 这类以 `doi.` 开头的解析器前缀同理。此外去掉只有域名没有路径的仓库根链接（`https://github.com` 指向空页），以及截断在域名中间的残串（去掉 `www.` 后没有点号，如 `https://www.agilityrobotics`）。每篇上限 3→4 条，仓库、项目主页与数据集站点经常同时出现。
+- **附件扫描放宽**：单附件 20 MB→60 MB，尾页 3 页→6 页。会议论文 PDF 常在 25～50 MB，旧上限会把最该扫的附件静默跳过；附录小节标题也往往排在正文之后好几页。实测那篇 Expressive Whole-Body Control for Humanoid Robots（22,772,375 字节、13 页）旧版因超限整个跳过，本版第一页抽出 `https://expressive-humanoid.github.io`，尾页抽出 `A. Motion Dataset Selection`、`B. Additional Training Details`、`C. Additional Real World Results Visualization`。
+- **附录小节进证据链**：读到 `Appendix`／`Supplementary Material`／`附录` 标记行后，形如「A. Motion Dataset Selection」「A. 额外实验」的标题会被收集（最多 8 节、重复去重），作为每篇的 `appendix` 字段与 `links` 一起送出；结果卡片和「复制全文」新增「附录小节」一行，文献清单加「附录 N 节」徽章，本机历史保存并在重开时复原。以句号收尾的整句正文不收。
+- **附录只证明「有这些标题」**：提示词明确 `appendix` 为空只表示在已读页面里没发现附录标记，不能据此断言这篇没有附录，也不得由标题猜附录里的数值、表格内容或实验设置。上面三个标题对应数据集选择、额外训练细节与真实世界结果可视化——附录里没有单独的代码或数据小节。
+- **跳过要说出来**：附件超限、读取或解析失败时，状态行补一句「附件扫描跳过 N 篇（超过 60 MB：K 篇；读取或解析失败：L 篇）…」；pdf.js 模块加载失败或本机 Zotero 缺少附件读取能力时直接说明原因，并且不把这些行标记成已扫描，下次仍会重扫。
+- **评价依据里不再有空话**：实测有档位给「中等」、依据末尾却写着「知识：AI 推断，需核对；依据现有材料不足以判断其相对新颖性。」——一个没有内容的占位标签，还把自己刚判的档推翻。原因在提示词：上一版要求逐句标「摘要：」「链接：」「知识：」，示例 JSON 又写成 `basis: "摘要：…；知识：…（AI 推断，需核对）"`，模型照抄了形状。现在只有真的引用了材料之外的了解才写「知识：」，并且要写出那条了解是什么，没引用就整段省略；另加同调要求——材料确实不足就填「证据不足」并说明缺什么，已给高／中／低便不得再写「无法判断」。示例 JSON 换成带具体内容的依据。
+- **围栏不变**：外发的仍只有题录、摘要、抽到的链接文本与附录小节标题，PDF 正文一句不外发（回归测试断言附录标题下方的正文不会进载荷），也不打开任何链接；还是一次派发、沿用「文献解析」功能模型，BYOK 未确认的执行依旧不自动重发，错误投影依旧只给错误码、HTTP 状态与类名。
+- **What changed**: "Clear selection" now repaints the tick icons from the same selection set the hint reads, so the list can no longer look fully checked while claiming to send zero papers. URLs split across PDF line breaks are rejoined—this was why a project site printed on page 1 came back as nothing—and the glue only fires when the gap is followed by hostname-shaped text. arXiv and DOI landing pages, bare registry roots and mid-domain fragments are no longer counted as discoveries, and the per-paper cap moves 3→4. Attachment scanning grows from 20 MB to 60 MB and from the last three pages to the last six, so a 22 MB, 13-page conference PDF that used to be silently skipped now yields its project page and its appendix headings. Appendix section titles become a per-paper `appendix` field carried through the prompt, result cards, copied text and local history, with the prompt stating that an empty list only means no marker was found on the pages read. Skipped attachments and a missing parser or reader are reported in the status line instead of passing silently, and unscanned rows stay unmarked so the next run retries. Rating bases no longer end in an empty 「知识：AI 推断，需核对」 disclaimer that contradicts the band above it: the label is only written when knowledge outside the material is actually cited, and a paper graded high/medium/low may not then claim it cannot be judged. Only metadata, abstracts, link text and appendix titles leave the machine—no PDF prose, nothing opened—one dispatch, same billing destination, resend fence and redacted errors unchanged.
+
 <a id="update-06135"></a>
 
 ## 0.6.13.5：评价更稳、开源链接找得更准（2026-10-27）
@@ -21,7 +37,7 @@
 - **档位锚点**：`high`／`medium`／`low`／`unclear` 各写死判据——`high`＝该方向上此前少见的设定且给出可复现产物或新任务设定，`medium`＝已知做法的新组合／新场景／规模推进，`low`＝增量改动（换骨干、调超参、加一个模块）或结论仅限小样本自建数据，`unclear`＝材料不足，含缺摘要的条目。并明确要求「不要为了拉开差距而分档」。
 - **允许结合模型自身的知识**：实用价值与创新性可以引用模型对该方向已有工作、常见做法与后续影响的了解，不必只盯摘要文字。代价是必须交代来源：判断依据逐句以「摘要：」「链接：」「知识：」开头，凭记忆而材料未证实的部分要写「AI 推断，需核对」，未提供的数值不得用来支撑档位。
 - **开源证据不再只看摘要**：每篇发给模型的数据新增 `links` 字段，题录的 `url` 与 `extra` 里的网址会被抽进来；代码／数据集判「有」时可以引用摘要原话或这些链接，并在依据里标「摘要：」「题录链接：」「附件链接：」。图片地址、参考文献里成串的无关网址会被过滤，每篇最多 3 条、已知代码与数据站点优先，超出 160 字的网址截断。模型仍只能原样引用 `links` 里已有的地址，不得输出别的网址。
-- **扫描本机附件（新开关）**：项目主页通常印在 PDF 第一页页脚或文末的 "Code availability"，而库里常常只存了 PDF 本身。勾上「扫描附件找开源链接」（首选项 `extensions.jadenseInZotero.quickReviewScanLinks`，默认开启）后，生成前会用插件自带的 pdf.js 只读每篇附件的**第一页与最后三页**文字，从里面抽链接：单附件上限 20 MB、每篇最多 2 个附件、每批只扫一次（授权重发沿用已扫过的那批，不重读盘）。外发的只有抽到的链接文本，PDF 正文不发送，也不会打开任何链接。关掉开关即回到「只发题录与摘要、不读取 PDF」，窗口顶部的说明行会跟着开关改写，把这次到底发不发附件写明白。
+- **扫描本机附件（新开关）**：项目主页通常印在 PDF 第一页页脚或文末的 "Code availability"，而库里常常只存了 PDF 本身。勾上「扫描附件找开源链接」（首选项 `extensions.jadenseInZotero.quickReviewScanLinks`，默认开启）后，生成前会用插件自带的 pdf.js 只读每篇附件的**第一页与最后三页**文字（0.6.13.6 起改为最后六页），从里面抽链接：单附件上限 20 MB（0.6.13.6 起 60 MB）、每篇最多 2 个附件、每批只扫一次（授权重发沿用已扫过的那批，不重读盘）。外发的只有抽到的链接文本，PDF 正文不发送，也不会打开任何链接。关掉开关即回到「只发题录与摘要、不读取 PDF」，窗口顶部的说明行会跟着开关改写，把这次到底发不发附件写明白。
 - **看得见结果**：文献清单里带链接的行标出条数；结果卡片与复制全文新增「本地链接」一行，用等宽文本展示、可整段选中，但不做成链接（不生成 `<a>`），避免误点外部地址；本机历史也保存这些链接，重新打开记录时卡片上仍然看得到。
 - **两处措辞与预算修正**：开源徽章从「摘要明确给出／摘要未提及」改为「明确给出／明确不给／未见说明」，因为证据现在不只来自摘要。`resourceNote` 上限 100→120（要放得下一条完整网址加来源前缀），逐篇评价的「依据」120→150；提示词里写给模型的字数限制仍与客户端的裁剪上限由同一组常量生成。
 - **围栏不变**：还是一次派发、沿用「文献解析」功能模型，不新增计费目的地；BYOK 未确认的执行依旧不自动重发，错误投影依旧只给错误码、HTTP 状态与类名。
@@ -386,7 +402,8 @@ BYOK 是 Bring Your Own Key：使用自己在模型服务商处申请的 API 密
 1. 顶部列表框可切换到同资料库的其他收藏夹；列表默认全部勾选，可逐篇取消。
 2. 「一次发送」默认前 6 篇，可选 6／12／20／30 篇。超过 12 篇时先确认再发送：篇数越多，每篇摘要预算越紧，耗时与费用也越高。
 3. 发送内容是题录、摘要与每篇的 `links`（本机发现的开源链接）；摘要过长按篇数均分预算自动压缩，缺摘要的条目仅依据题录判断并在结果中标注。PDF 正文、全文与附件路径都不发送。
-4. 「扫描附件找开源链接」开关（首选项 `extensions.jadenseInZotero.quickReviewScanLinks`，默认开启）决定 `links` 的来源范围：开着时，生成前会用插件自带的 pdf.js 只读每篇附件的**第一页与最后三页**文字，从里面抽网址——项目主页常印在首页页脚或文末的 "Code availability"，很多人只存了 PDF 本身，靠摘要找不到。单附件上限 20 MB、每篇最多 2 个附件、每批只扫一次；外发的只有抽到的链接文本，正文不出机器，也不会打开任何链接。关掉后回到只读题录的 `url`／`extra`，窗口顶部的说明行会写明这次到底读不读附件。
+4. 「扫描附件找开源链接」开关（首选项 `extensions.jadenseInZotero.quickReviewScanLinks`，默认开启）决定 `links` 与 `appendix` 的来源范围：开着时，生成前会用插件自带的 pdf.js 只读每篇附件的**第一页与最后六页**文字，从里面抽网址并收集附录小节标题——项目主页常印在首页页脚或文末的 "Code availability"，附录标题多排在正文之后，很多人只存了 PDF 本身，靠摘要找不到。单附件上限 60 MB、每篇最多 2 个附件、每批只扫一次；外发的只有抽到的链接文本与附录标题，正文不出机器，也不会打开任何链接。附件被跳过或解析模块没能加载时，状态行会说明原因，未扫到的行下次仍会重扫。关掉后回到只读题录的 `url`／`extra`，窗口顶部的说明行会写明这次到底读不读附件。
+5. 抽到的网址会过滤这几类噪声：图片地址、参考文献里成串的无关网址，arXiv 与 DOI 这类只是论文托管页／解析器的落地页，只有域名而没有路径的仓库根链接，以及截断在域名中间、补不出完整主机的残串。每篇最多 4 条，已知代码与数据站点优先，超出 160 字的网址截断。
 5. 「一次发送」默认前 6 篇，可选 6／12／20／30 篇。超过 12 篇时先确认再发送：篇数越多，每篇摘要预算越紧，耗时与费用也越高。
 6. 「逐篇评价（实用价值、创新性）」勾选后，**同一次调用**会带回每篇的实用价值、创新性、判断依据以及一段总体评价，不增加请求次数，也不新增计费目的地。评价与对应文献的要点排在同一行，向下浏览时一起滚动。勾选状态记在首选项 `extensions.jadenseInZotero.quickReviewEvaluate`（默认不勾选）。档位按固定锚点判：`高`＝该方向少见的设定且有可复现产物，`中`＝已知做法的新组合或规模推进，`低`＝增量改动或小样本自建数据，`证据不足`＝材料不够，含缺摘要的条目。
 7. 评价允许结合模型自己的知识，但依据必须逐句标来源：「摘要：」「链接：」「知识：」，凭记忆而材料未证实的部分要写「AI 推断，需核对」，未提供的数值不得用来支撑档位。开源代码与数据集只有三种说法：「明确给出」「明确不给」「未见说明」，界面按颜色区分并在文本里保留依据句；判「明确给出」要能指出摘要原话或一条具体链接（标「题录链接：」或「附件链接：」），插件不让模型按常识、期刊或「这类论文通常会开源」推断，也不允许编造或改写仓库名与网址。
