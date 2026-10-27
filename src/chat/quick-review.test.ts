@@ -136,6 +136,20 @@ describe("review link discovery", () => {
     expect(extractReviewLinks(`${noise} https://expressive-humanoid.github.io`)).toEqual(["https://expressive-humanoid.github.io"])
   })
 
+  it("drops the reference-list noise the local PDF audit turned up", () => {
+    // OpenReview 的论文页与 arXiv 同类：指向的还是这篇稿子，不是代码／数据。
+    expect(extractReviewLinks("https://openreview.net/forum?id=BJl6TjRc https://openreview.net/pdf/b303199")).toEqual([])
+    // 连字符断行截出来的半个地址。
+    expect(extractReviewLinks("https://github.com/hill- https://www.1x.tech/1x-world-mod-")).toEqual([])
+    // 参考文献里的出版商与检索站点。
+    expect(extractReviewLinks("https://api.semanticscholar.org/CorpusID:1 https://proceedings.mlr.press/v202/driess23a.html")).toEqual([])
+    // 噪声不能把真资源挤掉。
+    expect(extractReviewLinks("https://openreview.net/forum?id=x https://supermimic.github.io https://github.com/NVLabs/ReActor")).toEqual([
+      "https://supermimic.github.io",
+      "https://github.com/NVLabs/ReActor",
+    ])
+  })
+
   it("merges url, extra and attachment hits into one deduped list", () => {
     const merged = normalizeReviewLinks([
       "https://github.com/a/b",
@@ -311,8 +325,18 @@ describe("quick review prompt", () => {
     expect(prompt).toContain("也不得编造或改写仓库名、网址与许可证")
     expect(prompt).toContain("以「摘要：」「题录链接：」「附件链接：」开头标明来源")
     expect(prompt).toContain("未打开验证时不得断言其内容")
-    expect(prompt).toContain("comparison 给 3 到 5 个真正可比的维度")
+    // 单篇没有对比对象：既不给维度指令，示例里也不摆一条对比。
+    expect(prompt).toContain("本次只有 1 篇文献：comparison 返回空数组 []")
+    expect(prompt).not.toContain('"comparison":[{"dimension"')
     expect(prompt).not.toContain("ratings")
+  })
+
+  it("only asks for cross-paper comparison when there is more than one paper", () => {
+    const many = prepareQuickReviewPapers([row({ itemKey: "KEY1" }), row({ itemKey: "KEY2", title: "Second paper" })])
+    const prompt = buildQuickReviewPrompt({ collectionName: "Edge AI", papers: many })
+    expect(prompt).toContain("comparison 给 3 到 5 个真正可比的维度")
+    expect(prompt).not.toContain("本次只有 1 篇文献")
+    expect(prompt).toContain('"comparison":[{"dimension":"可比维度"')
   })
 
   it("sends appendix titles as local evidence and bounds what they may prove", () => {

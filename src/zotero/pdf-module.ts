@@ -39,11 +39,17 @@ export async function readPdfPagesText(pdf: PdfDocument, pages: readonly number[
   return chunks.join('\n')
 }
 
-/** 首尾若干页：开源与数据链接通常在第一页页脚或文末的 Code/Data availability。 */
-export function edgePageNumbers(total: number, leading = 1, trailing = 3): number[] {
+/**
+ * 取证要读的页码：实测一篇 27 页 PDF 全文抽取只要 224 ms，只读首尾页省不下时间，
+ * 却会漏掉夹在正文之后的附录（真实样本里 8 个小节标题全在中间页）。因此整篇都读，
+ * 超过上限时取首尾两半；文字只在内存里过一遍，外发的仍是链接文本与小节标题。
+ */
+export function evidencePageNumbers(total: number, cap = 80): number[] {
   if (!Number.isFinite(total) || total <= 0) return []
+  if (total <= cap) return Array.from({ length: total }, (_, index) => index + 1)
+  const leading = Math.ceil(cap / 2)
   const pages = new Set<number>()
-  for (let page = 1; page <= Math.min(leading, total); page += 1) pages.add(page)
-  for (let page = Math.max(1, total - trailing + 1); page <= total; page += 1) pages.add(page)
+  for (let page = 1; page <= leading; page += 1) pages.add(page)
+  for (let page = total - (cap - leading) + 1; page <= total; page += 1) pages.add(page)
   return [...pages].sort((left, right) => left - right)
 }

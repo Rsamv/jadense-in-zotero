@@ -98,7 +98,7 @@ function mount(count: number, options: { evaluatePref?: boolean; scanPref?: bool
   // 默认按"扫描没找到链接"返回：行为与原行一致，只有 attachmentScanned 标记被点亮。
   state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
     rows: rows.map(row => ({ ...row, attachmentScanned: true })),
-    scanned: rows.length, parsed: rows.length, found: 0, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false,
+    scanned: rows.length, parsed: rows.length, found: 0, withAppendix: 0, noAttachment: 0, pages: 30, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false,
   }))
   const review = mountQuickReview(document, host, vi.fn())
   const root = document.querySelector<HTMLElement>('#jadense-quick-review-dialog')!
@@ -235,7 +235,7 @@ it('reads attachment links once per batch and shows only the link text', async (
     onProgress?.('正在扫描附件里的开源链接 · 1/3')
     return {
       rows: rows.map((row, position) => ({ ...row, links: [...(row.links ?? []), ...(position === 0 ? ['https://github.com/tiny/attn'] : [])], attachmentScanned: true })),
-      scanned: rows.length, parsed: rows.length, found: 1, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false,
+      scanned: rows.length, parsed: rows.length, found: 1, withAppendix: 0, noAttachment: 0, pages: 30, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false,
     }
   })
   await review.open([1])
@@ -281,7 +281,7 @@ it('shows appendix titles from the local pages without wiping the user tick mark
     rows: rows.map((row, position) => position === 0
       ? { ...row, links: ['https://expressive-humanoid.github.io'], appendix: ['A. Motion Dataset Selection', 'B. Additional Training Details'], attachmentScanned: true }
       : { ...row, attachmentScanned: true }),
-    scanned: rows.length, parsed: rows.length - 1, found: 1, oversize: 1, unreadable: 0, parserMissing: false, readerMissing: false,
+    scanned: rows.length, parsed: rows.length - 1, found: 1, withAppendix: 1, noAttachment: 0, pages: 26, oversize: 1, unreadable: 0, parserMissing: false, readerMissing: false,
   }))
   await review.open([1])
   const boxes = () => [...root.querySelectorAll<HTMLInputElement>('.jdx-review-papers input[type="checkbox"]')]
@@ -292,8 +292,9 @@ it('shows appendix titles from the local pages without wiping the user tick mark
   expect(boxes()[2].checked).toBe(false)
   expect([...root.querySelectorAll('.jdx-review-appendix-item')].map(node => node.textContent))
     .toEqual(['A. Motion Dataset Selection', 'B. Additional Training Details'])
-  // 跳过的篇数在结果之后仍然可见：不然"没扫到链接"会被读成"论文没有链接"。
-  expect(statusText(root)).toContain('附件扫描跳过 1 篇')
+  // 扫描回执在结果之后仍然可见：不然"没扫到链接"会被读成"论文没有链接"。取消勾选的那篇不进扫描。
+  expect(statusText(root)).toContain('读了 1 篇 PDF 共 26 页')
+  expect(statusText(root)).toContain('1 篇超过 60 MB')
   review.dispose()
 })
 

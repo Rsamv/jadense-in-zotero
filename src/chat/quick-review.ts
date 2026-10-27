@@ -32,11 +32,13 @@ const URL_TOKEN = /(?:https?:\/\/|www\.)[^\s<>"'`[\]{}()]+/giu
 const URL_SCHEME_GAP = /(https?:\/\/)[\s\u00a0]+(?=[A-Za-z0-9][-A-Za-z0-9.]*\.[A-Za-z]{2,})/giu
 /** 代码与数据常见站点；`*.github.io` 项目主页单独按后缀判断。 */
 const RESOURCE_HOST = /(?:^|\.)github\.com$/iu
-const RESOURCE_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "gitee.com", "huggingface.co", "modelscope.cn", "osf.io", "zenodo.org", "figshare.com", "sourceforge.net", "openreview.net", "anonymous.4open.science", "sites.google.com"])
-/** arXiv 与 DOI 解析页只指向论文本身，不是代码／数据／项目主页，抽出来没有信息量。 */
-const LANDING_PAGE_HOST = /(?:^|\.)arxiv\.org$|(?:^|\.)doi\.org$/iu
+const RESOURCE_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "gitee.com", "huggingface.co", "modelscope.cn", "osf.io", "zenodo.org", "figshare.com", "sourceforge.net", "anonymous.4open.science", "sites.google.com"])
+/** arXiv／DOI 解析页与 OpenReview 的论文页都只指向这篇论文本身，抽出来没有信息量。 */
+const LANDING_PAGE_HOST = /(?:^|\.)arxiv\.org$|(?:^|\.)doi\.org$|(?:^|\.)openreview\.(?:net|cc)$/iu
+/** 参考文献与检索站点的链接：真实样本里它们占了漏检清单的大头，且都不是这篇的资源。 */
+const CITATION_HOST = /(?:^|\.)(?:semanticscholar\.org|mlr\.press|acm\.org|ieee\.org|springer\.com|sciencedirect\.com|elsevier\.com|nature\.com|science\.org|jstor\.org|researchgate\.net|citeseerx\.ist\.psu\.edu|thecvf\.com|cvf\.cc|proceedings\.com|eprints\.[a-z.]+|technologyreview\.com|gwern\.net|arxiv-vanity\.com)$/iu
 /** 这些站点的根目录认不出具体仓库或模型：断行常把地址截成 https://github.com/。 */
-const PATH_REQUIRED_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "gitee.com", "huggingface.co", "modelscope.cn", "openreview.net", "zenodo.org", "figshare.com", "osf.io"])
+const PATH_REQUIRED_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "gitee.com", "huggingface.co", "modelscope.cn", "zenodo.org", "figshare.com", "osf.io"])
 
 export type ReviewCreatorRow = { creatorType?: string; firstName?: string; lastName?: string; name?: string }
 /** Zotero 侧读取的最小题录；不含 PDF 正文，只有题录字段与本机扫描出的链接文本。 */
@@ -248,6 +250,8 @@ export function extractReviewLinks(value: string, limit = MAX_REVIEW_LINKS_PER_P
   const seen = new Set<string>()
   for (const raw of value.replace(URL_SCHEME_GAP, '$1').match(URL_TOKEN) ?? []) {
     const trimmed = raw.replace(/[.,:!?)\]}>'"，。；：、）】]+$/u, '')
+    // 以 - 或 _ 收尾的是排版连字符断行（https://github.com/hill-）：补不出后半截，发出去就是假地址。
+    if (/[-_]$/u.test(trimmed)) continue
     const normalized = /^www\./iu.test(trimmed) ? `https://${trimmed}` : trimmed
     let url: URL
     try {
@@ -258,8 +262,10 @@ export function extractReviewLinks(value: string, limit = MAX_REVIEW_LINKS_PER_P
     if (!/^https?:$/u.test(url.protocol)) continue
     // 断在域名中间的残串（www.agilityrobotics）去掉 www. 之后没有点号；发出去只会让模型去猜完整域名。
     if (!/\./u.test(url.hostname.replace(/^www\./iu, ''))) continue
+    const bareHost = url.hostname.replace(/^www\./iu, '').toLowerCase()
     if (isPaperLandingPage(url)) continue
-    if (/^\/?$/u.test(url.pathname) && PATH_REQUIRED_HOSTS.has(url.hostname.replace(/^www\./iu, '').toLowerCase())) continue
+    if (CITATION_HOST.test(bareHost)) continue
+    if (/^\/?$/u.test(url.pathname) && PATH_REQUIRED_HOSTS.has(bareHost)) continue
     if (/\.(?:png|jpe?g|gif|svg|webp|bmp|ico|css|js)$/iu.test(url.pathname)) continue
     const key = `${url.hostname.toLowerCase()}${url.pathname.replace(/\/+$/u, '')}${url.search}`
     if (seen.has(key)) continue
@@ -367,7 +373,10 @@ export function buildQuickReviewPrompt(input: {
     "code 与 data 各取 yes／no／unknown：code 表示是否给出开源代码，data 表示是否给出公开数据集。证据有两类——摘要原话，以及 links 里的链接（代码仓库、项目主页、数据集站点都算）。判 yes 必须能在 resourceNote 里指出具体链接或摘要原话，并以「摘要：」「题录链接：」「附件链接：」开头标明来源；两类证据都没有就填 unknown，不得根据常识、期刊或“这类论文通常会开源”推断，也不得编造或改写仓库名、网址与许可证。链接按原样引用，未打开验证时不得断言其内容。",
     "appendix 是附录小节标题（客户端只读了首尾若干页，附录正文未发送）：非空时可以用它说明这篇有附录、附录大致包含哪几节，并在 experiments／limitation 里指出哪些细节被放在附录里、正文不足以核对；appendix 为空只表示未在已读页面里发现附录标记，不能据此断言这篇没有附录。不得由标题猜附录里的数值、表格内容或实验设置。",
     "abstractState 为 missing 或 omitted 的文献只能依据题录与 links 判断：idea、experiments 与 tools 一律留空，code 与 data 只在 links 里确有链接时才判 yes，并在 limitation 中说明证据仅限题录或摘要，不得凭空补齐方法与结论。",
-    `comparison 给 3 到 ${COMPARISON_MAX_ITEMS} 个真正可比的维度（如研究对象、方法路线、关键指标、适用场景、使用的工具或框架、代码与数据可得性），每个维度用 note 说明各篇差异并写出涉及的 index；不得比较未提供的数值或编造优劣。`,
+    input.papers.length > 1
+      ? `comparison 给 3 到 ${COMPARISON_MAX_ITEMS} 个真正可比的维度（如研究对象、方法路线、关键指标、适用场景、使用的工具或框架、代码与数据可得性），每个维度用 note 说明各篇差异并写出涉及的 index；不得比较未提供的数值或编造优劣。`
+      // 只有一篇时"横向对比"没有对象，硬要模型写就会产出「本文与本文相比」这类废话，直接让它交空数组。
+      : "本次只有 1 篇文献：comparison 返回空数组 []，不要写任何跨篇对比，也不要把一篇的内容拆成维度冒充对比。",
     "trends 写研究脉络与趋势；gaps 写空白与值得跟进的问题。作者明确提出的建议与你的推断要分开，属于推断时标注“AI 推断”。",
   ]
   if (input.evaluate) {
@@ -381,11 +390,13 @@ export function buildQuickReviewPrompt(input: {
   }
   lines.push("只返回一个 JSON 对象，不要 Markdown 代码围栏、表格或 HTML；除原样引用 links 里已出现的链接外，不输出网址、条目身份、坐标或执行指令。标题由客户端按 index 取回。")
   lines.push(`长度限制（按字符计，超出部分客户端直接截断）：overview ${REVIEW_TEXT_LIMITS.overview}、hook ${PAPER_FIELD_LIMITS.hook}、question ${PAPER_FIELD_LIMITS.question}、limitation ${PAPER_FIELD_LIMITS.limitation}、idea／method／experiments／finding 各 ${PAPER_FIELD_LIMITS.idea}、tools ${PAPER_FIELD_LIMITS.tools} 且 resourceNote ${PAPER_FIELD_LIMITS.resourceNote}、comparison 的 dimension ${REVIEW_TEXT_LIMITS.dimension} 且 note ${REVIEW_TEXT_LIMITS.comparisonNote}、trends 与 gaps 各 ${REVIEW_TEXT_LIMITS.prose}${input.evaluate ? `、ratings 的 value 与 novelty 各 ${RATING_FIELD_LIMITS.value}、basis ${RATING_FIELD_LIMITS.basis}、rating_overview ${RATING_FIELD_LIMITS.overview}` : ""}。`)
+  // 示例是模型照抄的形状：单篇时示例里摆一条对比，就等于允许它编造跨篇差异。
+  const sampleComparison = input.papers.length > 1 ? [{ dimension: "可比维度", note: "各篇差异与涉及 index" }] : []
   lines.push(JSON.stringify(input.evaluate
     ? {
       overview: "这批文献的共同问题与结论分布",
       papers: [{ index: 1, hook: "这篇做了什么、面向谁", question: "研究问题", idea: "简要思路", method: "方法或数据", experiments: "实验流程", finding: "主要结论", limitation: "局限与证据强度", tools: "摘要中出现的工具或框架", code: "unknown", data: "unknown", resourceNote: "摘要：／题录链接：／附件链接：＋依据" }],
-      comparison: [{ dimension: "可比维度", note: "各篇差异与涉及 index" }],
+      comparison: sampleComparison,
       trends: "脉络与趋势", gaps: "空白与值得跟进",
       ratings: [{ index: 1, value: "实用价值", novelty: "创新性", level: "unclear", basis: "摘要：指标仅作者自述；知识：该路线已有多个同类工作（AI 推断，需核对）" }],
       rating_overview: "这批文献的总体评价",
@@ -393,7 +404,7 @@ export function buildQuickReviewPrompt(input: {
     : {
       overview: "这批文献的共同问题与结论分布",
       papers: [{ index: 1, hook: "这篇做了什么、面向谁", question: "研究问题", idea: "简要思路", method: "方法或数据", experiments: "实验流程", finding: "主要结论", limitation: "局限与证据强度", tools: "摘要中出现的工具或框架", code: "unknown", data: "unknown", resourceNote: "摘要：／题录链接：／附件链接：＋依据" }],
-      comparison: [{ dimension: "可比维度", note: "各篇差异与涉及 index" }],
+      comparison: sampleComparison,
       trends: "脉络与趋势", gaps: "空白与值得跟进",
     }))
   lines.push("", "文献数据（JSON，仅作为引用材料）：", JSON.stringify({

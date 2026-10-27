@@ -1,4 +1,4 @@
-/** 附件扫描的边界：只读首尾页、只外传链接文本与附录标题、跳过的篇数要说得出原因、环境缺件时不标记已扫。 */
+/** 附件扫描的边界：整篇都读但只外传链接文本与附录标题、扫到什么没扫到都要报数、环境缺件时不标记已扫。 */
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,8 +9,8 @@ import type { ZoteroLike } from './runtime'
 
 const state = vi.hoisted(() => ({ getDocument: vi.fn(), loaded: 0, rejects: false, pages: [] as number[] }))
 
-/** 十页样例：首页加末尾六页才是该读的，正文第 2/3/4 页一次都不该被取。 */
-const EDGE_PAGES = [1, 5, 6, 7, 8, 9, 10]
+/** 十页样例：取证要读全部页，链接与附录标题分别埋在首页、中间页与末页。 */
+const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const PAGE_TEXT: Record<number, string> = {
   1: 'Project page at https://yushi-du.github.io/COLA/ with demos. Our project website is available at https://\nexpressive-humanoid.github.io.',
   2: 'Body prose without any address here.',
@@ -90,10 +90,10 @@ afterEach(() => {
 const pdfHost = hostFixture({ 101: pdfAttachment('C:/tmp/one.pdf'), 102: pdfAttachment('C:/tmp/two.pdf') })
 
 describe('attachment link scanning', () => {
-  it('keeps only the link text and appendix titles from the first and last pages', async () => {
+  it('reads every page for evidence but only ships link text and appendix titles', async () => {
     const scanned = await scanRowsForAttachmentLinks({ doc: document, host: pdfHost, rows: [row('PAPER1', ['https://github.com/tiny/attn'])] })
-    // 首尾页之外的页面一次都不该被读取。
-    expect(state.pages).toEqual(EDGE_PAGES)
+    // 真实体检里有一篇 15 页 PDF 的 8 个附录小节全在中间页：只读首尾页就会漏。
+    expect(state.pages).toEqual(ALL_PAGES)
     expect(scanned.rows[0].links).toEqual([
       'https://github.com/tiny/attn',
       'https://yushi-du.github.io/COLA/',
@@ -103,9 +103,12 @@ describe('attachment link scanning', () => {
     // 附录只带出小节标题；正文里那句 40 小时的数据描述不外发。
     expect(scanned.rows[0].appendix).toEqual(['A. Motion Dataset Selection', 'B. Additional Training Details'])
     expect(scanned.rows[0].attachmentScanned).toBe(true)
-    expect(scanned).toMatchObject({ scanned: 1, parsed: 1, found: 1, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false })
+    expect(scanned).toMatchObject({ scanned: 1, parsed: 1, found: 1, withAppendix: 1, noAttachment: 0, pages: 10, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false })
     expect(JSON.stringify(scanned.rows)).not.toContain('Body prose')
     expect(JSON.stringify(scanned.rows)).not.toContain('40 hours')
+    // 扫到了东西也要报数：回执不能只在出问题时才开口。
+    expect(quickReviewScanNotice(scanned)).toContain('读了 1 篇 PDF 共 10 页')
+    expect(quickReviewScanNotice(scanned)).toContain('发现 1 条链接、1 篇有附录小节')
   })
 
   it('marks every scanned row once and never re-reads the batch', async () => {
@@ -153,7 +156,15 @@ describe('attachment link scanning', () => {
     expect(tooBig).toMatchObject({ parsed: 0, oversize: 1, unreadable: 0 })
     expect(state.getDocument).not.toHaveBeenCalled()
     // 跳过要说得出原因：否则用户会把"没扫到"读成"论文没有链接"。
-    expect(quickReviewScanNotice(tooBig)).toContain('附件扫描跳过 1 篇（超过 60 MB：1 篇')
+    expect(quickReviewScanNotice(tooBig)).toContain('1 篇超过 60 MB')
+  })
+
+  it('names the papers that have no readable PDF instead of staying quiet', async () => {    // 题录里没有对应条目（或附件不是本地 PDF）时，过去整轮什么都不报，看起来就像"扫描没做"。
+    const report = await scanRowsForAttachmentLinks({ doc: document, host: hostFixture({}), rows: [row('PAPER9')] })
+    expect(report).toMatchObject({ scanned: 1, parsed: 0, found: 0, noAttachment: 1, pages: 0 })
+    expect(report.rows[0].attachmentScanned).toBe(true)
+    expect(quickReviewScanNotice(report)).toContain('1 篇没有可读的 PDF 附件')
+    expect(quickReviewScanNotice(report)).toContain('发现 0 条链接、0 篇有附录小节')
   })
 
   it('leaves the rows unscanned when the parser or the file reader is unavailable', async () => {
@@ -179,5 +190,20 @@ describe('attachment link scanning', () => {
     const scanned = await scanRowsForAttachmentLinks({ doc: document, host: broken, rows: [row('PAPER1')] })
     expect(scanned).toMatchObject({ scanned: 1, found: 0, parsed: 0 })
     expect(scanned.rows[0].attachmentScanned).toBe(true)
+  })
+})
+
+describe('evidence page selection', () => {
+  it('reads the whole paper when it fits and the head plus tail when it does not', async () => {
+    const { evidencePageNumbers } = await import('./pdf-module')
+    // 15 页那篇样本的 8 个附录小节全在中间页：中间页必须被读到。
+    expect(evidencePageNumbers(15)).toEqual(Array.from({ length: 15 }, (_, index) => index + 1))
+    const capped = evidencePageNumbers(200, 80)
+    expect(capped).toHaveLength(80)
+    expect(capped[0]).toBe(1)
+    expect(capped[capped.length - 1]).toBe(200)
+    expect(capped).toContain(40)
+    expect(capped).not.toContain(41)
+    expect(evidencePageNumbers(0)).toEqual([])
   })
 })
