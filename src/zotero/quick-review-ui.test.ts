@@ -49,12 +49,16 @@ function fixture(count: number) {
     ["extensions.jadenseInZotero.token", "fixture-token"],
     [QUICK_REVIEW_HISTORY_PREF_KEY, JSON.stringify({ version: 1, records: [] })],
   ])
+  const launcher = vi.fn()
+  const readerOpen = vi.fn(async (_id: number, _location?: { pageIndex?: number }) => undefined)
   const host = {
     Prefs: { get: (key: string) => values.get(key), set: (key: string, value: unknown) => { values.set(key, value) }, clear: (key: string) => { values.delete(key) } },
     Collections: { get: (id: number) => (id === 1 ? collection : undefined), getByLibrary: () => [collection] },
     getActiveZoteroPane: () => ({ getSelectedCollections: () => [collection] }),
+    launchURL: launcher,
+    Reader: { open: readerOpen },
   } as unknown as ZoteroLike
-  return { host, values }
+  return { host, values, launcher, readerOpen }
 }
 
 /** 用真实解析与渲染文本层造结果，只替换网络派发；记录结构与运行器写历史的字段一致。 */
@@ -91,7 +95,7 @@ const statusText = (root: Element) => root.querySelector('.jdx-manager-inline-st
 const scanLines = (root: Element) => [...root.querySelectorAll('.jdx-review-scan')].map(node => node.textContent).join(' ')
 
 function mount(count: number, options: { evaluatePref?: boolean; scanPref?: boolean } = {}) {
-  const { host, values } = fixture(count)
+  const { host, values, launcher, readerOpen } = fixture(count)
   if (options.evaluatePref) values.set(EVALUATE_PREF_KEY, true)
   if (options.scanPref === false) values.set(SCAN_PREF_KEY, false)
   state.run.mockImplementation(async (input: { rows: ReviewPaperRow[]; evaluate?: boolean }) => outcome(input.rows, input.evaluate === true))
@@ -114,7 +118,7 @@ function mount(count: number, options: { evaluatePref?: boolean; scanPref?: bool
   }
   const evaluateSwitch = () => root.querySelector<HTMLInputElement>('input[aria-label="逐篇评价"]')!
   const scanSwitch = () => root.querySelector<HTMLInputElement>('input[aria-label="扫描附件找开源链接"]')!
-  return { host, values, review, root, labeled, pickText, choose, evaluateSwitch, scanSwitch }
+  return { host, values, review, root, labeled, pickText, choose, evaluateSwitch, scanSwitch, launcher, readerOpen }
 }
 
 afterEach(() => { document.body.replaceChildren(); state.run.mockReset(); state.scan.mockReset() })
@@ -298,6 +302,34 @@ it('shows appendix titles from the local pages without wiping the user tick mark
   // 每篇卡片都写出扫描账目：0 条也要写，否则沉默会被读成"没扫"。
   expect([...root.querySelectorAll('.jdx-review-evidence')].map(node => node.textContent))
     .toContain('附件：读了 13 页 · 发现链接 1 条 · 附录小节 2 节')
+  review.dispose()
+})
+
+it('opens local links in the browser and jumps to the appendix page in the reader', async () => {
+  const { review, root, labeled, launcher, readerOpen } = mount(2)
+  state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
+    rows: rows.map(row => ({
+      ...row,
+      links: ['https://expressive-humanoid.github.io'],
+      appendix: ['A. Motion Dataset Selection'],
+      appendixRefs: [{ title: 'A. Motion Dataset Selection', page: 7, attachmentID: 101 }],
+      attachmentScanned: true, scanPages: 13, scanOutcome: 'parsed' as const,
+    })),
+    scanned: rows.length, parsed: rows.length, found: rows.length, withAppendix: rows.length, noAttachment: 0, pages: 26, oversize: 0, unreadable: 0, unavailable: 0, parserMissing: false, readerMissing: false,
+  }))
+  await review.open([1])
+  await click(labeled('生成综述'))
+  // 链接是按钮而不是裸文本：点一下交给系统浏览器，插件自己不访问地址。
+  const link = root.querySelector<HTMLButtonElement>('button.jdx-review-link')!
+  expect(link.textContent).toBe('https://expressive-humanoid.github.io')
+  link.click(); await flush()
+  expect(launcher).toHaveBeenCalledWith('https://expressive-humanoid.github.io/')
+  // 附录小节带页码：点一下让阅读器定位到同一页，pageIndex 从 0 开始。
+  const jump = root.querySelector<HTMLButtonElement>('button.jdx-review-jump')!
+  expect(jump.textContent).toContain('A. Motion Dataset Selection')
+  expect(jump.textContent).toContain('第 7 页')
+  jump.click(); await flush()
+  expect(readerOpen).toHaveBeenCalledWith(101, { pageIndex: 6 })
   review.dispose()
 })
 

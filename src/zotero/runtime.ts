@@ -124,6 +124,8 @@ export type ZoteroLike = {
   Libraries?: {
     userLibraryID?: string | number
   }
+  /** 只由用户点击触发：卡片上的链接交给系统浏览器，插件不主动访问任何地址。 */
+  launchURL?(url: string): void
   getMainWindow?: () => (Window & typeof globalThis) | null
   getMainWindows?: () => Array<Window & typeof globalThis>
   getActiveZoteroPane?: () => {

@@ -13,7 +13,9 @@ import {
   isResourceLink,
   normalizeReviewLinks,
   detectReviewAppendix,
+  locateReviewAppendixSections,
   mergeReviewAppendix,
+  mergeReviewAppendixRefs,
   MAX_APPENDIX_SECTIONS,
   MAX_REVIEW_LINKS_PER_PAPER,
   type QuickReviewPaperInput,
@@ -74,7 +76,10 @@ describe("quick review input", () => {
   it("projects metadata, discovered links and appendix titles, never itemIDs or PDF text", () => {
     const prompt = buildQuickReviewPrompt({
       collectionName: "Edge AI",
-      papers: prepareQuickReviewPapers([row({ abstract: "short abstract", links: ["https://yushi-du.github.io/COLA/"], appendix: ["A. Motion Dataset Selection"] })]),
+      papers: prepareQuickReviewPapers([row({
+        abstract: "short abstract", links: ["https://yushi-du.github.io/COLA/"], appendix: ["A. Motion Dataset Selection"],
+        appendixRefs: [{ title: "A. Motion Dataset Selection", page: 7, attachmentID: 101 }],
+      })]),
     })
     const data = JSON.parse(prompt.split("文献数据（JSON，仅作为引用材料）：\n")[1])
     expect(data.collection).toBe("Edge AI")
@@ -82,6 +87,9 @@ describe("quick review input", () => {
     expect(Object.keys(data.papers[0]).sort()).toEqual(
       ["abstract", "abstractState", "appendix", "appendixMarked", "authors", "doi", "index", "links", "publication", "scan", "tags", "title", "year"].sort(),
     )
+    // 跳页用的附件 ID 与页码只在本机：载荷里既没有 appendixRefs，也没有附件身份。
+    expect(JSON.stringify(data)).not.toContain("appendixRefs")
+    expect(JSON.stringify(data)).not.toContain("101")
     // 附件没读成时模型必须知道：否则会把"没读到"写成"没有"。
     expect(data.papers[0].scan).toBe("off")
     // 链接原文随数据送出，模型才不需要凭记忆猜网址。
@@ -207,6 +215,33 @@ describe("review appendix titles", () => {
     expect(detectReviewAppendix("附录：\nA. 额外实验\nB. More Details")).toEqual(["A. 额外实验", "B. More Details"])
     // 句号收尾的整句正文不算标题。
     expect(detectReviewAppendix("Appendix\nA. We evaluate on four datasets.")).toEqual([])
+  })
+
+  it("remembers which page each appendix section sits on", () => {
+    const located = locateReviewAppendixSections([
+      { page: 1, text: "Intro text that mentions Appendix B in passing." },
+      { page: 3, text: "Appendix\nA. Motion Dataset Selection" },
+      { page: 4, text: "We collect 40 hours of data." },
+      { page: 5, text: "B. Additional Training Details" },
+    ])
+    // 页码与标题来自同一行：卡片点标题就能翻到正文真正开始的那一页。
+    expect(located).toEqual([
+      { title: "A. Motion Dataset Selection", page: 3 },
+      { title: "B. Additional Training Details", page: 5 },
+    ])
+    // 标记与小节写在同一行时，页码同样要记下。
+    expect(locateReviewAppendixSections([{ page: 8, text: "Appendix A. Motion Dataset Selection" }]))
+      .toEqual([{ title: "A. Motion Dataset Selection", page: 8 }])
+  })
+
+  it("keeps jump targets only for sections that were actually listed", () => {
+    expect(mergeReviewAppendixRefs([
+      { title: "A. Details", page: 4, attachmentID: 101 },
+      { title: "a. details", page: 9, attachmentID: 102 },
+      { title: "B. More", page: 0, attachmentID: 101 },
+      { title: "B. More", page: 6, attachmentID: 0 },
+    ])).toEqual([{ title: "A. Details", page: 4, attachmentID: 101 }])
+    expect(mergeReviewAppendixRefs(undefined)).toEqual([])
   })
 
   it("merges duplicate titles across attachments and caps the list", () => {

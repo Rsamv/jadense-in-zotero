@@ -281,6 +281,8 @@ export async function runQuickReview(input: {
     papers: papers.map(paper => ({
       libraryID: paper.libraryID, itemKey: paper.itemKey, title: paper.title, authors: paper.authors, year: paper.year, publication: paper.publication,
       index: paper.index, abstractState: paper.abstractState, links: paper.links, appendix: paper.appendix,
+      // 跳页信息只存本机历史：附件 ID 与页码不随请求外发，也不进复制文本。
+      ...(paper.appendixRefs?.length ? { appendixRefs: paper.appendixRefs } : {}),
       attachmentScanned: paper.attachmentScanned === true, scanPages: paper.scanPages ?? 0,
       ...(paper.scanOutcome ? { scanOutcome: paper.scanOutcome } : {}),
       appendixMarked: paper.appendixMarked === true,

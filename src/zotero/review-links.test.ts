@@ -108,6 +108,11 @@ describe('attachment link scanning', () => {
     expect(scanned.rows[0].scanPages).toBe(10)
     // 附录只带出小节标题；正文里那句 40 小时的数据描述不外发。
     expect(scanned.rows[0].appendix).toEqual(['A. Motion Dataset Selection', 'B. Additional Training Details'])
+    // 小节页码与附件 ID 一起留下：卡片点标题就能让阅读器翻到那一页，这些只在本机。
+    expect(scanned.rows[0].appendixRefs).toEqual([
+      { title: 'A. Motion Dataset Selection', page: 10, attachmentID: 101 },
+      { title: 'B. Additional Training Details', page: 10, attachmentID: 101 },
+    ])
     expect(scanned.rows[0].attachmentScanned).toBe(true)
     expect(scanned).toMatchObject({ scanned: 1, parsed: 1, found: 1, withAppendix: 1, noAttachment: 0, pages: 10, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false })
     expect(JSON.stringify(scanned.rows)).not.toContain('Body prose')

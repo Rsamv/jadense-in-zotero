@@ -97,7 +97,12 @@ describe("quick review history", () => {
 const structuredRecord = (): QuickReviewRecord => ({
   ...record(),
   papers: [
-    { libraryID: 1, itemKey: "PAPER1", title: "Attention for tiny models", authors: "Wu Lin", year: "2025", publication: "ICML", index: 1, abstractState: "full", links: ["https://expressive-humanoid.github.io", "https://arxiv.org/abs/2402.19099"], appendix: ["A. Motion Dataset Selection", "a. 不合标题形状的一行", "A. Motion Dataset Selection"] },
+    { libraryID: 1, itemKey: "PAPER1", title: "Attention for tiny models", authors: "Wu Lin", year: "2025", publication: "ICML", index: 1, abstractState: "full", links: ["https://expressive-humanoid.github.io", "https://arxiv.org/abs/2402.19099"], appendix: ["A. Motion Dataset Selection", "a. 不合标题形状的一行", "A. Motion Dataset Selection"],
+      appendixRefs: [
+        { title: "A. Motion Dataset Selection", page: 7, attachmentID: 101 },
+        { title: "B. 没存进小节的标题", page: 9, attachmentID: 101 },
+        { title: "A. Motion Dataset Selection", page: 0, attachmentID: 101 },
+      ] },
     { libraryID: 1, itemKey: "PAPER2", title: "Edge compilers", authors: "Chen Rui", year: "2024", publication: "MLSys", index: 2, abstractState: "missing" },
   ],
   review: {
@@ -132,7 +137,10 @@ describe("quick review history restore", () => {
     // 链接与附录标题随记录保存：写入时已剔掉论文落地页和不合标题形状的行。
     expect(restored?.papers[0].links).toEqual(["https://expressive-humanoid.github.io"])
     expect(restored?.papers[0].appendix).toEqual(["A. Motion Dataset Selection"])
+    // 跳页信息只保留小节列表里确有的标题与合法页码：坏记录不能凭空造出可点小节。
+    expect(restored?.papers[0].appendixRefs).toEqual([{ title: "A. Motion Dataset Selection", page: 7, attachmentID: 101 }])
     expect(restored?.papers[1].appendix).toBeUndefined()
+    expect(restored?.papers[1].appendixRefs).toBeUndefined()
     expect(restored?.result.ratings.map(rating => rating.index).sort()).toEqual([1, 2])
     expect(restored?.result.ratingOverview).toBe("整体偏工程实用。")
     expect(restored?.result.evaluated).toBe(true)

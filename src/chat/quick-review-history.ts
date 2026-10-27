@@ -3,8 +3,8 @@ import { uiText } from "@/zotero/ui-preferences"
  * 收藏夹快速解析的本机历史。
  * 与单篇解析历史分开保存：记录归属收藏夹而非某个附件，且只缓存可读文字，不承载任何库内写入输入。
  */
-import type { QuickReviewAvailability, QuickReviewDisplayPaper, QuickReviewPaperNote, QuickReviewPaperRating, QuickReviewRatingLevel, QuickReviewResult, QuickReviewScanOutcome } from "./quick-review"
-import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, mergeReviewAppendix, normalizeReviewLinks } from "./quick-review"
+import type { QuickReviewAvailability, QuickReviewDisplayPaper, QuickReviewPaperNote, QuickReviewPaperRating, QuickReviewRatingLevel, QuickReviewResult, QuickReviewScanOutcome, ReviewAppendixRef } from "./quick-review"
+import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, mergeReviewAppendix, mergeReviewAppendixRefs, normalizeReviewLinks } from "./quick-review"
 
 export const QUICK_REVIEW_HISTORY_PREF_KEY = "extensions.jadenseInZotero.quickReviewHistory"
 
@@ -30,6 +30,8 @@ export type QuickReviewRecordPaper = {
   links?: string[]
   /** 0.6.13.6 起保存附录小节标题，历史点开才能复原"有附录"这条本机证据。 */
   appendix?: string[]
+  /** 0.6.13.10 起保存小节的附件与页码：重开旧综述时也能点标题跳到那一页。 */
+  appendixRefs?: ReviewAppendixRef[]
   /** 0.6.13.8 起保存附录标记：标题排不出编号时，"有附录"这件事仍然要在历史里成立。 */
   appendixMarked?: boolean
   /** 0.6.13.8 起保存扫描账目：历史点开时能看出当时读过多少页、是否压根没扫。 */
@@ -97,6 +99,24 @@ function indexNumber(value: unknown): number | undefined {
 const AVAILABILITY: readonly string[] = ["yes", "no", "unknown"]
 const LEVELS: readonly string[] = ["high", "medium", "low", "unclear"]
 
+/**
+ * 跳页信息只认整数页码与附件 ID，且标题必须真的出现在已保存的小节列表里：
+ * 坏记录不能借这一栏凭空造出一个可点小节，也不能指到不存在的页。
+ */
+function normalizeAppendixRefs(value: unknown, titles: readonly string[]): ReviewAppendixRef[] {
+  if (!titles.length || !Array.isArray(value)) return []
+  const refs: ReviewAppendixRef[] = []
+  for (const entry of value) {
+    const row = object(entry)
+    const title = text(row?.title, 120)
+    const page = libraryNumber(row?.page)
+    const attachmentID = libraryNumber(row?.attachmentID)
+    if (!title || page === undefined || page < 1 || attachmentID === undefined || attachmentID < 1) continue
+    refs.push({ title, page, attachmentID })
+  }
+  return mergeReviewAppendixRefs(refs).filter(ref => titles.some(title => title.toLowerCase() === ref.title.toLowerCase()))
+}
+
 function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
   const row = object(value)
   const libraryID = libraryNumber(row?.libraryID)
@@ -105,6 +125,10 @@ function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
   if (libraryID === undefined || !itemKey || !title) return null
   const index = indexNumber(row?.index)
   const state = row?.abstractState
+  const appendix = Array.isArray(row?.appendix) && row.appendix.length
+    ? mergeReviewAppendix(row.appendix.filter((line): line is string => typeof line === "string"))
+    : []
+  const appendixRefs = normalizeAppendixRefs(row?.appendixRefs, appendix)
   return {
     libraryID,
     itemKey,
@@ -115,7 +139,8 @@ function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
     ...(index !== undefined ? { index } : {}),
     ...(state === "full" || state === "truncated" || state === "omitted" || state === "missing" ? { abstractState: state } : {}),
     ...(Array.isArray(row?.links) && row.links.length ? { links: normalizeReviewLinks(row.links.filter((link): link is string => typeof link === "string")) } : {}),
-    ...(Array.isArray(row?.appendix) && row.appendix.length ? { appendix: mergeReviewAppendix(row.appendix.filter((line): line is string => typeof line === "string")) } : {}),
+    ...(appendix.length ? { appendix } : {}),
+    ...(appendixRefs.length ? { appendixRefs } : {}),
     ...(row?.appendixMarked === true ? { appendixMarked: true } : {}),
     ...(typeof row?.attachmentScanned === "boolean" ? { attachmentScanned: row.attachmentScanned } : {}),
     ...(typeof row?.scanPages === "number" && Number.isFinite(row.scanPages) && row.scanPages >= 0 ? { scanPages: Math.round(row.scanPages) } : {}),
@@ -222,6 +247,7 @@ export function quickReviewRecordView(record: QuickReviewRecord): { result: Quic
     abstractState: paper.abstractState ?? "full",
     ...(paper.links?.length ? { links: paper.links } : {}),
     ...(paper.appendix?.length ? { appendix: paper.appendix } : {}),
+    ...(paper.appendixRefs?.length ? { appendixRefs: paper.appendixRefs } : {}),
     ...(paper.appendixMarked === true ? { appendixMarked: true } : {}),
     ...(typeof paper.attachmentScanned === "boolean" ? { attachmentScanned: paper.attachmentScanned } : {}),
     ...(typeof paper.scanPages === "number" ? { scanPages: paper.scanPages } : {}),

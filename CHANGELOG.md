@@ -1,5 +1,17 @@
 # 更新说明 / Changelog
 
+## 0.6.13.10 — 2026-10-27
+
+- 链接能点了。卡片里的「本地链接」从纯文本改成按钮，点击经 `Zotero.launchURL` 交给系统浏览器。只接受 http/https——历史记录或旧题录里混进的 `javascript:` 之类不会变成可执行动作。插件自身不访问任何地址，只有用户点下去才打开。
+- 附录小节能跳到原文那一页了。扫描时每个小节标题都记下它出现在第几页、来自哪个附件；点击小节按钮调用 `Zotero.Reader.open(附件 itemID, { pageIndex })`，直接翻到附录所在页（`pageIndex` 是 0 起算的物理页，标题所在页减 1）。附件已在阅读器里打开时就地跳转，没打开就新开标签并定位。旧历史记录没有页码，保持纯文本，不假装能跳。
+- 新增 `appendixRefs`（标题＋页码＋附件 itemID），只在本机流转：不进请求载荷，也不进「复制全文」。历史记录保存它，重开旧综述仍能跳页；读取时只认正整数页码与附件 ID，且标题必须确实出现在已保存的小节列表里——坏记录不能凭空造出一个可点小节，也不能指到不存在的页。
+- 外观沿用原来的药丸样式，补了虚线可点提示、悬停实线、指针光标；按钮可用 Tab 聚焦，聚焦描边复用窗口既有样式。链接行与附录行的说明也改成「点击在浏览器打开」「点击跳到该页」。
+- 隐私与计费不变：外发仍只有题录、摘要、链接文本与附录小节标题，PDF 正文一句不出机器；扫描过程不打开任何链接；一次派发、沿用「文献解析」功能模型，BYOK 未确认结果不自动重发，错误投影只给错误码／HTTP 状态／类名。
+- Links are clickable now. Each local link is a button that hands the URL to the system browser through `Zotero.launchURL`, and only http/https is accepted so a `javascript:` leftover from an old record cannot become an action. The plugin itself still opens nothing; only an explicit click does.
+- Appendix sections jump to their page. The scan now records the page and attachment for every section title, and clicking a section calls `Zotero.Reader.open(attachmentID, { pageIndex })` with the zero-based physical page, reusing an open reader or opening a new tab. Records saved before this version have no page information, so their titles stay plain text rather than pretending to be links.
+- The new `appendixRefs` field stays local: it never enters the request payload or the copied text, and history persists it so an old review still jumps. On read, page and attachment IDs must be positive integers and the title must already be listed as a section, so a malformed record cannot invent a clickable section or point at a page that does not exist.
+- Styling keeps the existing pill look with a dotted underline, solid on hover, pointer cursor and keyboard focus. Privacy and billing are unchanged: only metadata, abstracts, link text and appendix section titles leave the machine, one dispatch per run, and unconfirmed BYOK executions are never resent.
+
 ## 0.6.13.9 — 2026-10-27
 
 - 修掉真机上附件扫描全部落空的根因：Zotero 10 的 `Items.get` 与 `getByLibraryAndKey` 只查缓存，条目已登记但未装载时会抛 `UnloadedDataException`；从 `collection.getChildItems()` 取到的条目又没有装载自身的 `childItems`，`getAttachments()` 同样抛错。两处异常都被旧的 `callMethod` 吞成「没有附件」，于是每篇都写成「读了 0 页 · 发现链接 0 条 · 未见附录」——而那篇 PDF 第一页就印着 `https://expressive-humanoid.github.io`、附录也有三节。现在改用 `getAsync`／`getByLibraryAndKeyAsync` 落库解析，并在 `getAttachments()` 失败时用 `loadDataType('childItems')` 补载后重试；同步 API 只作旧版回退。

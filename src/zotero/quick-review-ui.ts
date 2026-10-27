@@ -14,6 +14,7 @@ import {
   type QuickReviewDisplayPaper,
   type QuickReviewRatingLevel,
   type QuickReviewResult,
+  type ReviewAppendixRef,
   type ReviewPaperRow,
 } from '@/chat/quick-review'
 import {
@@ -228,18 +229,62 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     if (note.resourceNote) row.append(make('span', note.resourceNote, 'jdx-review-flag-note'))
     return row
   }
-  /** 链接是本地发现的，原样显示为不可点击文本：窗口不打开任何外部地址。 */
+  /** 只认 http/https：历史记录或旧题录里混进的 javascript: 之类不能变成可执行动作。 */
+  const externalHref = (link: string) => {
+    try {
+      const url = new URL(link)
+      return /^https?:$/u.test(url.protocol) ? url.href : ''
+    } catch { return '' }
+  }
+  /** 用户点链接才交给系统浏览器；插件自身不访问任何地址，失败只报一句、不覆盖扫描回执之外的内容。 */
+  const visitLink = (link: string) => {
+    const href = externalHref(link)
+    if (!href) { status.textContent = uiText('只打开 http/https 链接。', 'Only http and https links are opened.'); return }
+    const launcher = host.launchURL
+    if (typeof launcher !== 'function') { status.textContent = uiText('当前 Zotero 版本无法打开外部链接。', 'This Zotero build cannot open external links.'); return }
+    try { launcher.call(host, href) } catch { status.textContent = uiText('无法打开该链接。', 'The link could not be opened.') }
+  }
+  /** 附录小节跳页：阅读器按 PDF 物理页定位，pageIndex 从 0 开始。 */
+  const openAppendixPage = async (ref: ReviewAppendixRef) => {
+    // Reader 的签名在各子系统里各不相同，这里只认"能带页码打开附件"这一种用法。
+    const reader = (host as ZoteroLike & { Reader?: { open?(itemID: number, location?: { pageIndex?: number }): unknown | Promise<unknown> } }).Reader
+    if (typeof reader?.open !== 'function') { status.textContent = uiText('当前 Zotero 版本无法在阅读器中定位页码。', 'This Zotero build cannot jump to a page in the reader.'); return }
+    try {
+      await Promise.resolve(reader.open.call(reader, ref.attachmentID, { pageIndex: Math.max(0, ref.page - 1) }))
+    } catch {
+      status.textContent = uiText('无法定位到这一页；附件可能已被删除或移动。', 'Could not jump to that page; the attachment may have been deleted or moved.')
+    }
+  }
+  /** 链接是本地发现的证据：点一下交给系统浏览器。 */
   const linksRow = (links: string[]) => {
     const row = make('div', '', 'jdx-review-links')
-    row.append(make('span', uiText('本地链接', 'Local links'), 'jdx-review-links-label'))
-    for (const link of links) row.append(make('code', link, 'jdx-review-link'))
+    row.append(make('span', uiText('本地链接（点击在浏览器打开）', 'Local links (click to open)'), 'jdx-review-links-label'))
+    for (const link of links) {
+      if (!externalHref(link)) { row.append(make('code', link, 'jdx-review-link')); continue }
+      const open = button(link, () => visitLink(link), 'jdx-review-link')
+      open.title = uiText(`在浏览器中打开 ${link}`, `Open ${link} in the browser`)
+      row.append(open)
+    }
     return row
   }
-  /** 附录标题同样只是本机证据：只说明这篇有附录、大致分几节，不代表读过附录内容。 */
-  const appendixRow = (titles: string[]) => {
+  /**
+   * 附录标题同样只是本机证据：只说明这篇有附录、大致分几节，不代表读过附录内容。
+   * 扫描记下页码的小节点一下就能在阅读器里翻到那一页；没有页码的保持纯文本。
+   */
+  const appendixRow = (titles: string[], refs: ReviewAppendixRef[] | undefined) => {
     const row = make('div', '', 'jdx-review-links')
-    row.append(make('span', uiText('附录小节', 'Appendix sections'), 'jdx-review-links-label'))
-    for (const title of titles) row.append(make('span', title, 'jdx-review-appendix-item'))
+    const refOf = (title: string) => refs?.find(entry => entry.title.toLowerCase() === title.toLowerCase())
+    row.append(make('span', titles.some(title => refOf(title))
+      ? uiText('附录小节（点击跳到该页）', 'Appendix sections (click to jump)')
+      : uiText('附录小节', 'Appendix sections'), 'jdx-review-links-label'))
+    for (const title of titles) {
+      const ref = refOf(title)
+      if (!ref) { row.append(make('span', title, 'jdx-review-appendix-item')); continue }
+      const jump = button(title, () => { void openAppendixPage(ref) }, 'jdx-review-appendix-item jdx-review-jump')
+      jump.title = uiText(`在 Zotero 阅读器中打开第 ${ref.page} 页`, `Open page ${ref.page} in the Zotero reader`)
+      jump.append(make('small', uiText(`第 ${ref.page} 页`, `p. ${ref.page}`), 'jdx-review-jump-page'))
+      row.append(jump)
+    }
     return row
   }
   /**
@@ -273,7 +318,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     const evidence = evidenceRow(paper)
     if (evidence) card.append(evidence)
     if (paper.links?.length) card.append(linksRow(paper.links))
-    if (paper.appendix?.length) card.append(appendixRow(paper.appendix))
+    if (paper.appendix?.length) card.append(appendixRow(paper.appendix, paper.appendixRefs))
     if (!note) {
       card.append(fieldsBlock([], [uiText('状态', 'Status'), uiText('模型未覆盖本篇。', 'The model did not cover this paper.')]))
       return card

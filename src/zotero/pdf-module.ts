@@ -29,14 +29,14 @@ export function loadPdfModule(doc: Document, base: string = pdfModuleBase(doc)):
 
 export type PdfDocument = Awaited<ReturnType<PdfModule['getDocument']>['promise']>
 
-/** 只取指定页的文字；调用方负责 destroy。 */
-export async function readPdfPagesText(pdf: PdfDocument, pages: readonly number[]): Promise<string> {
-  const chunks: string[] = []
+/** 逐页取文字并保留页码：附录小节要能说出自己在第几页，卡片才能跳过去；调用方负责 destroy。 */
+export async function readPdfPageTexts(pdf: PdfDocument, pages: readonly number[]): Promise<{ page: number; text: string }[]> {
+  const chunks: { page: number; text: string }[] = []
   for (const page of pages) {
     const content = await (await pdf.getPage(page)).getTextContent()
-    chunks.push(content.items.map(item => 'str' in item ? item.str + (item.hasEOL ? '\n' : ' ') : '').join('').trim())
+    chunks.push({ page, text: content.items.map(item => 'str' in item ? item.str + (item.hasEOL ? '\n' : ' ') : '').join('').trim() })
   }
-  return chunks.join('\n')
+  return chunks
 }
 
 /**

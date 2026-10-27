@@ -49,6 +49,11 @@ const CITATION_HOST = /(?:^|\.)(?:semanticscholar\.org|mlr\.press|acm\.org|ieee\
 const PATH_REQUIRED_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "gitee.com", "huggingface.co", "modelscope.cn", "zenodo.org", "figshare.com", "osf.io"])
 
 export type ReviewCreatorRow = { creatorType?: string; firstName?: string; lastName?: string; name?: string }
+/**
+ * 附录小节标题加它所在的附件与页：卡片点一下就能翻到那一页。
+ * 附件 itemID 与页码只在本机流转，既不进请求载荷，也不写进导出的正文。
+ */
+export type ReviewAppendixRef = { title: string; page: number; attachmentID: number }
 /** 本机对附件的处置结果：noAttachment 是"确实没有 PDF"，unavailable 是"没读到附件列表"。 */
 export type QuickReviewScanOutcome = "parsed" | "noAttachment" | "oversize" | "unreadable" | "unavailable"
 /** 展示用的扫描状态：旧历史记录没有处置结果，只能按是否读过页数回退。 */
@@ -73,6 +78,8 @@ export type ReviewPaperRow = {
   scanOutcome?: QuickReviewScanOutcome
   /** 附件首尾页文字里识别出的附录小节标题；空数组表示读过附件但没找到附录标记。 */
   appendix?: string[]
+  /** 小节标题对应的附件与页码：只在本机用于跳页，绝不进请求载荷。 */
+  appendixRefs?: ReviewAppendixRef[]
   /** 本机读到了附录标记但排不出小节标题：有附录这件事本身仍然成立。 */
   appendixMarked?: boolean
 }
@@ -91,6 +98,8 @@ export type QuickReviewPaperInput = {
   links: string[]
   /** 客户端从本机附件首尾页文字里发现的附录小节标题；没有附件或未扫描时为空。 */
   appendix: string[]
+  /** 只在本机用于跳页的附件与页码；buildQuickReviewPayload 逐字段取值，这一项不会外发。 */
+  appendixRefs?: ReviewAppendixRef[]
   /** 本机是否读到附录标记（小节标题可能排不出编号）。 */
   appendixMarked?: boolean
   /** 本机是否真的读过这篇的附件，以及读了多少页：界面据此区分"没找到"与"没扫描"。 */
@@ -367,17 +376,59 @@ export function hasReviewAppendix(value: string): boolean {
   return value.split('\n').some(line => APPENDIX_MARKER.test(line.trim()) || APPENDIX_INLINE_SECTION.test(line.trim()))
 }
 
+export type ReviewAppendixSection = { title: string; page: number }
+
+/**
+ * 从逐页文字里取附录小节标题，并记住标题出现在哪一页：卡片的"跳到附录"靠的就是这个页码。
+ * 以附录标记行为界，只收标记之后出现的标题；标题取自哪一行，页码就取那一页。
+ */
+export function locateReviewAppendixSections(pages: readonly { page: number; text: string }[]): ReviewAppendixSection[] {
+  const found: ReviewAppendixSection[] = []
+  const push = (raw: string, page: number) => {
+    const title = mergeReviewAppendix([raw])[0]
+    if (!title || found.length >= MAX_APPENDIX_SECTIONS) return
+    if (found.some(entry => entry.title.toLowerCase() === title.toLowerCase())) return
+    found.push({ title, page })
+  }
+  let started = false
+  for (const entry of pages) {
+    if (!Number.isInteger(entry.page) || entry.page < 1) continue
+    for (const raw of entry.text.split('\n')) {
+      const line = raw.trim()
+      if (!started) {
+        const inline = APPENDIX_INLINE_SECTION.exec(line)
+        if (inline) { started = true; push(`${inline[1]}. ${inline[2]}`, entry.page); continue }
+        if (APPENDIX_MARKER.test(line)) started = true
+        continue
+      }
+      const section = APPENDIX_SECTION.exec(line)
+      if (section) push(`${section[1]}. ${section[2]}`, entry.page)
+    }
+  }
+  return found
+}
+
 /**
  * 从全文里取附录小节标题：以附录标记行为界，只收标记之后出现的标题。
  * 返回的是标题本身，不含附录正文——正文留在本机，外发的仍然只有标题与链接。
  */
 export function detectReviewAppendix(value: string): string[] {
-  const lines = value.split('\n').map(line => line.trim())
-  const start = lines.findIndex(line => APPENDIX_MARKER.test(line) || APPENDIX_INLINE_SECTION.test(line))
-  if (start < 0) return []
-  const inline = APPENDIX_INLINE_SECTION.exec(lines[start])
-  const seed = inline ? [`${inline[1]}. ${inline[2].replace(/\s+/gu, ' ').trim()}`] : []
-  return mergeReviewAppendix([...seed, ...lines.slice(start + 1)])
+  return locateReviewAppendixSections([{ page: 1, text: value }]).map(section => section.title)
+}
+
+/** 合并多篇附件给出的"标题＋页码"：同名小节只留第一次出现的那条，最多 8 条。 */
+export function mergeReviewAppendixRefs(value: readonly ReviewAppendixRef[] | undefined): ReviewAppendixRef[] {
+  const merged: ReviewAppendixRef[] = []
+  for (const entry of value ?? []) {
+    if (!entry || !Number.isInteger(entry.page) || entry.page < 1) continue
+    if (!Number.isInteger(entry.attachmentID) || entry.attachmentID < 1) continue
+    const title = mergeReviewAppendix([entry.title])[0]
+    if (!title) continue
+    if (merged.some(existing => existing.title.toLowerCase() === title.toLowerCase())) continue
+    merged.push({ title, page: entry.page, attachmentID: entry.attachmentID })
+    if (merged.length === MAX_APPENDIX_SECTIONS) break
+  }
+  return merged
 }
 
 /** 合并多个附件给出的附录标题：同名小节（同一篇的重复扫描件）只留一次，最多 8 条。 */
@@ -414,13 +465,16 @@ export function prepareQuickReviewPapers(rows: readonly ReviewPaperRow[]): Quick
       scanPages: Math.max(0, Math.round(row.scanPages ?? 0)),
       ...(row.scanOutcome ? { scanOutcome: row.scanOutcome } : {}),
     }
-    return { draft, abstract: (typeof row.abstract === 'string' ? row.abstract : '').replace(/\s+/gu, ' ').trim() }
+    // 跳页用的附件 ID 与页码不进 draft：它们不参与摘要预算，也不会随载荷外发。
+    const appendixRefs = mergeReviewAppendixRefs(row.appendixRefs)
+    return { draft, appendixRefs, abstract: (typeof row.abstract === 'string' ? row.abstract : '').replace(/\s+/gu, ' ').trim() }
   })
   const metadataChars = drafts.reduce((total, { draft }) => total + JSON.stringify(draft).length, 0)
   const share = drafts.length ? Math.floor((TOTAL_INPUT_CHARS_MAX - metadataChars - PROMPT_OVERHEAD_CHARS) / drafts.length) : 0
   const abstractLimit = Math.min(ABSTRACT_CHARS_MAX, Math.max(0, share))
-  return drafts.map(({ draft, abstract }) => ({
+  return drafts.map(({ draft, appendixRefs, abstract }) => ({
     ...draft,
+    ...(appendixRefs.length ? { appendixRefs } : {}),
     abstract: !abstract || abstractLimit < ABSTRACT_CHARS_MIN ? '' : clip(abstract, abstractLimit),
     abstractState: !abstract ? 'missing' as const
       : abstract.length <= abstractLimit ? 'full' as const
@@ -638,6 +692,8 @@ export type QuickReviewDisplayPaper = {
   links?: string[]
   /** 本机附件首尾页里识别出的附录小节标题，展示与复制用。 */
   appendix?: string[]
+  /** 小节标题的附件与页码：界面用它跳到 PDF 的那一页，不参与复制文本。 */
+  appendixRefs?: ReviewAppendixRef[]
   /** 本机读到过附录标记（即使小节标题没排出来）。 */
   appendixMarked?: boolean
   /** 本机是否读过这篇的附件、读了多少页；旧历史记录没有这两个字段，界面据此不画账目行。 */

@@ -1,13 +1,14 @@
 /**
  * 快速解析的开源链接发现：题录字段那一路在 collectReviewRows 里完成，这里只补附件那一路。
  * 两条证据通道：页面文字里的网址，以及 PDF 的超链接注释（文字层抽不出网址时注释仍保留原地址）。
- * 只保留链接文本与附录小节标题——正文不外发，也不打开任何链接。
+ * 只保留链接文本、附录小节标题及其页码——正文不外发；扫描过程不打开任何链接，
+ * 用户点卡片上的链接才交给系统浏览器，点附录小节才让阅读器翻到那一页。
  */
-import { ANNOTATION_LINK_PAGES, detectReviewAppendix, extractAnnotationReviewLinks, extractReviewLinks, hasReviewAppendix, mergeReviewAppendix, normalizeReviewLinks, type QuickReviewScanOutcome, type ReviewPaperRow } from '@/chat/quick-review'
+import { ANNOTATION_LINK_PAGES, extractAnnotationReviewLinks, extractReviewLinks, hasReviewAppendix, locateReviewAppendixSections, mergeReviewAppendix, mergeReviewAppendixRefs, normalizeReviewLinks, type QuickReviewScanOutcome, type ReviewAppendixRef, type ReviewAppendixSection, type ReviewPaperRow } from '@/chat/quick-review'
 import { uiText } from './ui-preferences'
 import type { ZoteroLike } from './runtime'
 import { diagnostics } from './diagnostics'
-import { evidencePageNumbers, loadPdfModule, pdfModuleBase, readPdfPageLinks, readPdfPagesText } from './pdf-module'
+import { evidencePageNumbers, loadPdfModule, pdfModuleBase, readPdfPageLinks, readPdfPageTexts } from './pdf-module'
 
 /** 会议论文 PDF 常见 25～50 MB：上限太低会把最该扫的附件静默跳过。 */
 const MAX_ATTACHMENT_BYTES = 60_000_000
@@ -121,17 +122,20 @@ async function attachmentPath(attachment: NativeRecord): Promise<string> {
   return typeof syncPath === "string" && syncPath.trim() ? syncPath.trim() : ""
 }
 
+type AttachmentScanResult = { links: string[]; appendix: string[]; sections: ReviewAppendixSection[]; marked: boolean; pages: number; outcome: AttachmentOutcome }
+
 /** 单个附件：读盘 → 解析取证页 → 抽链接与附录标题；失败只算这一篇没有附加证据，并说明卡在哪一步。 */
-async function attachmentScan(read: (path: string) => Promise<ArrayBuffer | Uint8Array>, pdfjs: Awaited<ReturnType<typeof loadPdfModule>>, path: string, base: string): Promise<{ links: string[]; appendix: string[]; marked: boolean; pages: number; outcome: AttachmentOutcome }> {
+async function attachmentScan(read: (path: string) => Promise<ArrayBuffer | Uint8Array>, pdfjs: Awaited<ReturnType<typeof loadPdfModule>>, path: string, base: string): Promise<AttachmentScanResult> {
+  const failed = (outcome: AttachmentOutcome): AttachmentScanResult => ({ links: [], appendix: [], sections: [], marked: false, pages: 0, outcome })
   let data: Uint8Array
   try {
     const raw = await read(path)
     data = raw instanceof Uint8Array ? raw : new Uint8Array(raw)
   } catch (error) {
     recordScanIssue("attachment_read", error)
-    return { links: [], appendix: [], marked: false, pages: 0, outcome: "unreadable" }
+    return failed("unreadable")
   }
-  if (data.byteLength > MAX_ATTACHMENT_BYTES) return { links: [], appendix: [], marked: false, pages: 0, outcome: "oversize" }
+  if (data.byteLength > MAX_ATTACHMENT_BYTES) return failed("oversize")
   const task = pdfjs.getDocument({
     data,
     isEvalSupported: false,
@@ -143,13 +147,23 @@ async function attachmentScan(read: (path: string) => Promise<ArrayBuffer | Uint
   try {
     const pdf = await task.promise
     const pages = evidencePageNumbers(pdf.numPages, MAX_PAGES_PER_ATTACHMENT)
-    const text = await readPdfPagesText(pdf, pages)
+    const pageTexts = await readPdfPageTexts(pdf, pages)
+    const text = pageTexts.map(entry => entry.text).join('\n')
     // 文字层抽不出网址的论文，超链接注释里往往还留着：只取靠前页，避免参考列表里的仓库混进来。
     const annotationLinks = extractAnnotationReviewLinks(await readPdfPageLinks(pdf, pages.filter(page => page <= ANNOTATION_LINK_PAGES)))
-    return { links: normalizeReviewLinks([...extractReviewLinks(text), ...annotationLinks]), appendix: detectReviewAppendix(text), marked: hasReviewAppendix(text), pages: pages.length, outcome: "parsed" }
+    // 小节标题连同页码一起留下：卡片上点标题就能翻到那一页。
+    const sections = locateReviewAppendixSections(pageTexts)
+    return {
+      links: normalizeReviewLinks([...extractReviewLinks(text), ...annotationLinks]),
+      appendix: sections.map(section => section.title),
+      sections,
+      marked: hasReviewAppendix(text),
+      pages: pages.length,
+      outcome: "parsed",
+    }
   } catch (error) {
     recordScanIssue("attachment_parse", error)
-    return { links: [], appendix: [], marked: false, pages: 0, outcome: "unreadable" }
+    return failed("unreadable")
   } finally {
     await task.destroy()
   }
@@ -215,6 +229,8 @@ export async function scanRowsForAttachmentLinks(input: {
   }
   const links = new Map<string, string[]>()
   const appendix = new Map<string, string[]>()
+  /** 标题 → 附件与页码：界面据此跳到附录所在页，附件 ID 只留在本机。 */
+  const appendixRefs = new Map<string, ReviewAppendixRef[]>()
   const marked = new Set<string>()
   /** 每篇读过多少页：卡片上要能写出这个数，"扫过"才不是一句空话。 */
   const rowPages = new Map<string, number>()
@@ -260,6 +276,10 @@ export async function scanRowsForAttachmentLinks(input: {
       if (scan.links.length) links.set(key, [...(links.get(key) ?? []), ...scan.links])
       if (scan.marked) marked.add(key)
       if (scan.appendix.length) appendix.set(key, [...(appendix.get(key) ?? []), ...scan.appendix])
+      const refID = Number(attachmentID)
+      if (scan.sections.length && Number.isInteger(refID) && refID > 0) {
+        appendixRefs.set(key, [...(appendixRefs.get(key) ?? []), ...scan.sections.map(section => ({ ...section, attachmentID: refID }))])
+      }
     }
     if (!outcomes.length && unresolved) { unavailable += 1; continue }
     // 一篇 PDF 都没解析上：单独计数，回执里要说"没有可读附件"而不是"没找到链接"。
@@ -283,10 +303,12 @@ export async function scanRowsForAttachmentLinks(input: {
     if (rowAppendix.length) withAppendix += 1
     const rowMarked = row.appendixMarked === true || marked.has(key) || rowAppendix.length > 0
     if (rowMarked) markedCount += 1
+    const rowRefs = mergeReviewAppendixRefs([...(row.appendixRefs ?? []), ...(appendixRefs.get(key) ?? [])])
     return {
       ...row,
       links: normalizeReviewLinks([...(row.links ?? []), ...(links.get(key) ?? [])]),
       appendix: rowAppendix,
+      ...(rowRefs.length ? { appendixRefs: rowRefs } : {}),
       appendixMarked: rowMarked,
       attachmentScanned: true,
       scanPages: (row.scanPages ?? 0) + (rowPages.get(key) ?? 0),
