@@ -50,11 +50,37 @@ def scanned_pages(document):
             if not any(char.isalpha() for char in page.get_text())]
 
 
+def revision_files(directory):
+    """按 revision 归组任务目录中的已发布 PDF；索引只引用当前版本。"""
+    groups = {}
+    for entry, kind in (
+        (path, path.name[33:]) for path in directory.glob('*.pdf')
+        if len(path.name) > 33 and path.name[32] == '-' and all(c in '0123456789abcdef' for c in path.name[:32])
+    ):
+        if kind in ('mono.pdf', 'dual.pdf'): groups.setdefault(entry.name[:32], []).append(entry)
+    return groups
+
+
+def prune_revisions(directory, keep):
+    """回收没有索引引用的历史快照；阅读器可能仍持有上一版路径，所以保留一代。"""
+    retained = {value for value in keep if isinstance(value, str) and len(value) == 32}
+    for revision, files in revision_files(directory).items():
+        if revision in retained: continue
+        for entry in files:
+            with contextlib.suppress(OSError): entry.unlink()
+    for entry in directory.glob('*-*.tmp.pdf'):
+        with contextlib.suppress(OSError): entry.unlink()
+
+
 def publish(source_path, translated_path, directory, skipped, metadata=None):
     """验证后原子写入 mono/dual；左右对照始终使用完整原页。"""
     import pymupdf as fitz
     directory = Path(directory)
     revision = uuid.uuid4().hex
+    try:
+        previous = json.loads((directory / 'artifact.json').read_text(encoding='utf-8')).get('revision', '')
+    except (OSError, ValueError):
+        previous = ''
     with fitz.open(source_path) as source, fitz.open(translated_path) as translated:
         if len(source) != len(translated):
             raise ValueError("Translated page count differs from source")
@@ -83,6 +109,7 @@ def publish(source_path, translated_path, directory, skipped, metadata=None):
             temporary = directory / 'artifact.tmp.json'
             temporary.write_text(json.dumps(artifact, ensure_ascii=True), encoding='utf-8')
             atomic_replace(temporary, directory / 'artifact.json')
+            prune_revisions(directory, (revision, previous))
             return artifact
         finally:
             mono.close()

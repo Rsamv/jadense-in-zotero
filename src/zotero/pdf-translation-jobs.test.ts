@@ -6,7 +6,7 @@ import { preparePDFEngine, runPDFWorker } from './pdf-translation-runtime'
 import type { ZoteroLike } from './runtime'
 import { translateMachineText } from '@/chat/machine-translation'
 import { requestHash } from '@/chat/temporary-request-store'
-import { PDF_ENGINE, PDF_ADAPTER, pdfTaskDirectory } from './pdf-translation-runtime'
+import { PDF_ENGINE, PDF_ADAPTER, pdfRuntimeRoot, pdfTaskDirectory } from './pdf-translation-runtime'
 import { readPDFTranslationMode, savePDFTranslationMode } from './pdf-translation-policy'
 import { ReliableTemporaryChatClient, TemporaryPartialOutputError } from '@/chat/reliable-temporary-chat'
 import { resolveTemporaryAccount } from '@/chat/temporary-account'
@@ -32,8 +32,26 @@ let service = 'google'
 let kind = 'machine'
 const preferences = new Map<string, unknown>()
 const credentialObservers = new Map<string, () => void>()
+/** 删除文献后 Items.get 不再返回附件，孤儿回收测试用它模拟真实 Zotero。 */
+const deleted = new Set<number>()
+/** 内存文件系统：getChildren 只返回该目录的直接子项，remove 支持递归目录。 */
+const childrenOf = async (directory: string) => {
+  const prefix = `${directory}/`, found = new Set<string>()
+  for (const file of files.keys()) if (file.startsWith(prefix)) found.add(prefix + file.slice(prefix.length).split('/')[0])
+  return [...found]
+}
+const removeEntry = async (target: string, options?: { recursive?: boolean }) => {
+  if (files.delete(target)) return
+  const prefix = `${target}/`
+  if (!options?.recursive && [...files.keys()].some(file => file.startsWith(prefix))) throw new Error('directory not empty')
+  for (const file of [...files.keys()]) if (file.startsWith(prefix)) files.delete(file)
+}
 const host = {
-  Items: { get: (id: number) => ({ id, libraryID: 1, key: `PDF${id}`, isPDFAttachment: () => true, getField: () => 'Paper', getFilePathAsync: async () => '/source.pdf' }) },
+  Items: {
+    get: (id: number) => deleted.has(id) ? undefined : ({ id, libraryID: 1, key: `PDF${id}`, isPDFAttachment: () => true, getField: () => 'Paper', getFilePathAsync: async () => '/source.pdf' }),
+    getByLibraryAndKey: (libraryID: number, key: string) => deleted.has(Number(key.slice(3))) ? undefined : ({ libraryID, key }),
+  },
+  Libraries: { userLibraryID: 1 },
   Prefs: {
     get: (key: string) => key.endsWith('fullTranslationInterface') ? JSON.stringify({ kind, service }) : preferences.get(key),
     registerObserver: (key: string, callback: () => void) => { credentialObservers.set(key, callback); return key },
@@ -43,12 +61,12 @@ const host = {
 } as unknown as ZoteroLike
 
 beforeEach(() => {
-  files.clear(); preferences.clear(); credentialObservers.clear(); kind = 'machine'; bytes = new Uint8Array([37, 80, 68, 70, 1]); service = 'google'; vi.clearAllMocks()
+  files.clear(); preferences.clear(); credentialObservers.clear(); deleted.clear(); kind = 'machine'; bytes = new Uint8Array([37, 80, 68, 70, 1]); service = 'google'; vi.clearAllMocks()
   vi.mocked(translateMachineText).mockReset().mockResolvedValue('translated')
   vi.mocked(resolveTemporaryAccount).mockResolvedValue({ account: 'synthetic-owner-source', verified: true })
   vi.stubGlobal('PathUtils', { profileDir: '/profile', join: path.posix.join, filename: path.posix.basename })
   vi.stubGlobal('IOUtils', { read: async () => bytes, readUTF8: async (file: string) => { if (!files.has(file)) throw new Error('missing'); return files.get(file)! },
-    getChildren: async () => [...new Set([...files.keys()].map(file => path.posix.dirname(file)))], makeDirectory: async () => {}, writeUTF8: async (file: string, value: string) => { files.set(file, value) }, exists: async () => true })
+    getChildren: childrenOf, makeDirectory: async () => {}, writeUTF8: async (file: string, value: string) => { files.set(file, value) }, exists: async () => true, remove: removeEntry })
   vi.mocked(runPDFWorker).mockImplementation(async (_host, config, _signal, message) => {
     files.set(path.posix.join(String(config.directory), 'artifact.json'), JSON.stringify({ fingerprint: config.fingerprint, configuration: config.configuration, revision: 'a'.repeat(32), pages: 2, skipped: [1], coverage: { total: 2, translated: 2, failed: 0, preserved: 1, failedPages: [] } }))
     await message({ type: 'complete', pages: 2, skipped: [1], extra: true })
@@ -301,6 +319,71 @@ describe('PDF jobs', () => {
     await restored.loadHistory()
     expect(restored.get(task.id)?.id).toBe(task.id)
     await expect(restored.bytes(task.id)).resolves.toEqual(bytes)
+  })
+  it('reclaims snapshots the artifact no longer references, including interrupted writes', async () => {
+    const jobs = new PDFTranslationJobs(host), task = await jobs.start(1)
+    await vi.waitFor(() => expect(task.status).toBe('complete'))
+    const directory = pdfTaskDirectory(task.id), current = 'a'.repeat(32)
+    files.set(path.posix.join(directory, `${'1'.repeat(32)}-mono.pdf`), 'superseded')
+    files.set(path.posix.join(directory, `${'1'.repeat(32)}-dual.pdf`), 'superseded')
+    files.set(path.posix.join(directory, `${current}-mono.tmp.pdf`), 'interrupted')
+    files.set(path.posix.join(directory, `${current}-dual.pdf`), 'current')
+    files.set(path.posix.join(directory, 'paragraphs-v3.json'), 'engine cache')
+    await jobs.sweepStorage()
+    const kept = [...files.keys()].filter(file => file.startsWith(`${directory}/`)).map(file => path.posix.basename(file))
+    expect(kept.sort()).toEqual([`${current}-dual.pdf`, 'artifact.json', 'paragraphs-v3.json', 'task.json'].sort())
+  })
+  it('reclaims results of a deleted attachment only after a second confirmation', async () => {
+    const jobs = new PDFTranslationJobs(host), task = await jobs.start(1)
+    await vi.waitFor(() => expect(task.status).toBe('complete'))
+    const layout = path.posix.join(pdfRuntimeRoot(host), 'layouts', 'd'.repeat(64))
+    files.set(path.posix.join(pdfTaskDirectory(task.id), `${'a'.repeat(32)}-dual.pdf`), 'result')
+    files.set(path.posix.join(layout, 'layout.json'), JSON.stringify({ identity: { attachment: [1, 'PDF1'] }, revision: 'a'.repeat(32) }))
+    files.set(path.posix.join(layout, `${'a'.repeat(32)}.pdf`), 'layout bytes')
+    deleted.add(1)
+    let now = 1_000
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      await jobs.sweepStorage()
+      expect(files.has(path.posix.join(layout, 'layout.json'))).toBe(true)
+      expect(jobs.get(task.id)?.id).toBe(task.id)
+      now += 61_000
+      await jobs.sweepStorage()
+    } finally { clock.mockRestore() }
+    expect([...files.keys()].some(file => file.startsWith(`${pdfTaskDirectory(task.id)}/`))).toBe(false)
+    expect([...files.keys()].some(file => file.startsWith(`${layout}/`))).toBe(false)
+    expect(jobs.get(task.id)).toBeUndefined()
+  })
+  it('keeps results when the library is not ready yet', async () => {
+    const jobs = new PDFTranslationJobs(host), task = await jobs.start(1)
+    await vi.waitFor(() => expect(task.status).toBe('complete'))
+    deleted.add(1)
+    const libraries = host.Libraries
+    let now = 1_000
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    host.Libraries = undefined
+    try {
+      await jobs.sweepStorage()
+      now += 61_000
+      await jobs.sweepStorage()
+    } finally { host.Libraries = libraries; clock.mockRestore() }
+    expect(jobs.get(task.id)?.id).toBe(task.id)
+    expect(files.has(path.posix.join(pdfTaskDirectory(task.id), 'task.json'))).toBe(true)
+  })
+  it('keeps results of deleted attachments while the orphan preference is off', async () => {
+    preferences.set('extensions.jadenseInZotero.removeOrphanTranslatedPDF', false)
+    const jobs = new PDFTranslationJobs(host), task = await jobs.start(1)
+    await vi.waitFor(() => expect(task.status).toBe('complete'))
+    deleted.add(1)
+    let now = 1_000
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    try {
+      await jobs.sweepStorage()
+      now += 61_000
+      await jobs.sweepStorage()
+    } finally { clock.mockRestore() }
+    expect(files.has(path.posix.join(pdfTaskDirectory(task.id), 'task.json'))).toBe(true)
+    expect(jobs.get(task.id)?.artifact?.revision).toBe('a'.repeat(32))
   })
   it('freezes the formula policy per task and keeps legacy retry inputs unchanged', async () => {
     const first = await new PDFTranslationJobs(host).start(1)

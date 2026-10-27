@@ -4,6 +4,7 @@ worker 提供原子发布，适配器负责有效译文映射；本模块仅持�
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
 from dataclasses import fields, is_dataclass
+import contextlib
 import hashlib
 import json
 from pathlib import Path
@@ -118,6 +119,10 @@ def install_pipeline(high_level, config, emit, publish_snapshot):
             try:
                 cache.mkdir(parents=True, exist_ok=True)
                 revision = uuid.uuid4().hex
+                try:
+                    superseded = json.loads((cache / 'layout.json').read_text(encoding='utf-8')).get('revision', '')
+                except (OSError, ValueError, AttributeError):
+                    superseded = ''
                 converter.write_json(docs, cache / f'{revision}.json')
                 shutil.copyfile(prepared, cache / f'{revision}.pdf')
                 hashes = {suffix: hashlib.sha256((cache / f'{revision}.{suffix}').read_bytes()).hexdigest() for suffix in ('pdf', 'json')}
@@ -126,6 +131,12 @@ def install_pipeline(high_level, config, emit, publish_snapshot):
                 temporary = cache / 'layout.tmp.json'
                 temporary.write_text(json.dumps(manifest), encoding='utf-8')
                 atomic_replace(temporary, cache / 'layout.json')
+                # 清单是缓存的唯一引用；重解析留下的旧快照在此回收，上一版仍留给并发读取。
+                for entry in list(cache.iterdir()):
+                    stem = entry.name.split('.')[0]
+                    if len(stem) != 32 or stem in (revision, superseded) or entry.suffix not in ('.json', '.pdf'): continue
+                    if any(character not in '0123456789abcdef' for character in stem): continue
+                    with contextlib.suppress(OSError): entry.unlink()
             except Exception:
                 emit(type='warning', stage='layout_cache_failed')
 

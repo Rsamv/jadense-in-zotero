@@ -6,6 +6,7 @@ import { copyTextToClipboard } from './connection-display'
 import { uiText } from './ui-preferences'
 import { show, type ToastAction } from './ui/toast'
 import { TranslationRateLimitError } from '@/chat/translation-queue'
+import { withErrorType } from './error-report'
 
 export type DocumentIssue = RequestIssue & { id: string; code: string; message: string; stage: string; action?: 'ocr' | 'connection'; retryAt?: number }
 export function documentIssue(error: unknown, stage: string, kind = 'translation'): DocumentIssue {
@@ -27,7 +28,9 @@ export function documentIssue(error: unknown, stage: string, kind = 'translation
   else if (code === 'STREAM_INCOMPLETE') issue.message = uiText('此片输出未完整结束，可能已达到输出长度限制，请重试此片。', 'This chunk ended incomplete, possibly at the output limit. Retry the chunk.') + retained
   else if (code === 'CONFIG_CHANGED') issue.message = uiText('当前任务使用的 AI 配置已改变，任务已暂停，请确认设置后继续。', 'The active AI configuration changed. The task paused; check settings and resume.') + retained
   else if (code === 'STORAGE_UNAVAILABLE') issue.message = uiText('尚未完整保存，请及时复制。', 'Not fully saved. Copy the content now.')
+  else if (code === 'PROVIDER_FAILED' || code === 'BYOK_STREAM_ERROR') issue.message = uiText('上游 AI 服务未返回可用结果，请稍后继续补译。', 'The upstream AI service returned no usable result. Resume to continue translation.') + retained
   else if (!issue.message) issue.message = requestIssueSummary(issue) + '。' + retained
+  issue.message = withErrorType(error, issue.message)
   return issue
 }
 

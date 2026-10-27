@@ -12,6 +12,7 @@ import { readTranslationInterface } from './translation-interface'
 import { readArticleTranslationLanguages } from './translation-settings'
 import type { TranslationLanguages } from '@/chat/translation-languages'
 import { checkCancelled, validateDocument, type DocumentIdentity } from './pdf-document'
+import { literatureIdentity } from './document-identity'
 import { PDF_ENGINE, PDF_ADAPTER, pdfRuntimeRoot, pdfPlatform, pdfTaskDirectory, preparePDFEngine, checkPDFEngine, runPDFWorker, type PDFEngineProgress } from './pdf-translation-runtime'
 import { assertStorageIdle, ensureEngineStorageAvailable } from './engine-storage'
 import { READING_AI_TOTAL_TIMEOUT_MS, translationScheduler, translationServiceKey, type TranslationSnapshot } from '@/chat/translation-queue'
@@ -20,6 +21,12 @@ import { uiText } from './ui-preferences'
 import { diagnostics } from './diagnostics'
 import { documentIssue } from './document-notices'
 import { readPDFTranslationMode, readPDFCoverage, pdfProviderFailure, type PDFTranslationMode, type PDFCoverage, type PDFArtifact } from './pdf-translation-policy'
+import { readAutoSaveTranslatedPDF, readRemoveOrphanTranslatedPDF, readTranslatedPDFDirectory, rememberTranslatedPDFDirectory, stripPDFExtension, translatedPDFFileName } from './pdf-translation-autosave'
+
+// 快照文件都带 revision 前缀，含写入中断残留的 .tmp.pdf。
+const REVISION_FILE = /^[0-9a-f]{32}-(mono|dual)(\.tmp)?\.pdf$/u
+/** 附件缺失需相隔至少一分钟的两次确认，避免文献库尚未加载时误删成果。 */
+const ORPHAN_CONFIRM_MS = 60_000
 
 /** 汇总旁记不能阻断 PDF 翻译，也不能把统计写成失败事件。 */
 function recordSummary(stage: string, translation: Record<string, number>) {
@@ -54,7 +61,7 @@ export type PDFTranslationTask = {
   failureCounts?: Record<string, number>; diagnosticId?: string
   formulaPolicy?: 'math-fonts-v1'
 }
-type Attachment = DocumentIdentity & { id: number; key: string; libraryID: number; getFilePathAsync(): Promise<string>; getField(key: string): unknown; attachmentModificationTime?: number | Promise<number> }
+type Attachment = DocumentIdentity & { id: number; key: string; libraryID: number; parentItem?: Attachment; parentItemID?: number; getFilePathAsync(): Promise<string>; getField(key: string): unknown; attachmentModificationTime?: number | Promise<number> }
 /** 文件失效与配置失效分别记录；恢复动作不能把同一旧任务再次送入相同校验。 */
 function changedPDFSource(task: PDFTranslationTask) {
   task.blockedReason = 'source'
@@ -63,7 +70,10 @@ function changedPDFSource(task: PDFTranslationTask) {
 export async function pdfSource(host: ZoteroLike, itemID: number) {
   const item = await host.Items?.get?.(itemID) as unknown as Attachment | undefined
   if (!item) throw new Error('PDF attachment unavailable')
-  const source: DocumentIdentity = { itemID, libraryID: item.libraryID, itemKey: item.key, title: String(item.getField('title') || 'PDF'), modificationTime: await item.attachmentModificationTime }
+  // Zotero 把附件 title 存成 "PDF" 占位名，命名与展示都优先取父条目（文献）标题。
+  const attachment: DocumentIdentity = { itemID, libraryID: item.libraryID, itemKey: item.key, title: String(item.getField('title') || 'PDF'), modificationTime: await item.attachmentModificationTime }
+  const literature = literatureIdentity(host, attachment)
+  const source: DocumentIdentity = { ...attachment, title: literature?.title ?? attachment.title, ...(literature ? { literature } : {}) }
   await validateDocument(host, source)
   const path = await item.getFilePathAsync()
   const bytes = await pdfPlatform().IOUtils.read(path)
@@ -117,6 +127,8 @@ export class PDFTranslationJobs {
   private starts = new Map<string, Promise<PDFTranslationTask>>()
   private storageReaders = 0
   private storageOperations = 0
+  private retired = new Map<string, number>()
+  private retiring?: Promise<void>
   private stopped = false
   private recoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private writes = new Map<string, Promise<void>>()
@@ -224,6 +236,8 @@ export class PDFTranslationJobs {
         if (!this.tasks.has(id)) this.tasks.set(id, task)
       } catch { /* 单个历史摘要损坏不阻断其他文献。 */ }
     }
+    // 历史读取后异步回收，不拖慢打开对照翻译；失败只留到下次清理。
+    void this.sweepStorage().catch(() => {})
     this.emit()
     } finally { this.storageReaders-- }
   }
@@ -576,6 +590,8 @@ export class PDFTranslationJobs {
       const deferred = outcome !== 'complete' && recoveryError && !needsAction && this.defer(task, recoveryError)
       if (!deferred) task.completion = outcome
       await this.save(task)
+      // 自动保存只在本次运行真正进入终态时触发；恢复重提交不再复制一份。
+      if (task.completion && task.completion !== 'cancelled') void this.autoSave(task)
     }).catch(async error => {
       const status = pdfProviderFailure(error).status
       if (status === 401 || status === 403) task.blockedReason = 'credentials'
@@ -617,13 +633,94 @@ export class PDFTranslationJobs {
     const { FilePicker } = platform.ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs')
     const picker = new FilePicker()
     picker.init(this.host.getMainWindow?.() ?? win, uiText('保存译文 PDF', 'Save translated PDF'), picker.modeSave)
-    picker.defaultString = `translation-${kind}.pdf`; picker.defaultExtension = 'pdf'; picker.appendFilter('PDF', '*.pdf')
+    const task = this.tasks.get(id)!, source = await pdfSource(this.host, task.source.itemID)
+    picker.defaultString = translatedPDFFileName(task.source.title, pdfPlatform().PathUtils.filename(source.path), kind)
+    picker.defaultExtension = 'pdf'; picker.appendFilter('PDF', '*.pdf')
     if (await picker.show() !== picker.returnCancel && picker.file) {
-      const source = await pdfSource(this.host, this.tasks.get(id)!.source.itemID)
       if (picker.file.replace(/\\/gu, '/').toLowerCase() === source.path.replace(/\\/gu, '/').toLowerCase()) throw new Error(uiText('请选择新的文件名，不能覆盖原 PDF。', 'Choose a new filename to preserve the original PDF.'))
-      await pdfPlatform().IOUtils.copy(this.outputPath(this.tasks.get(id)!, kind), picker.file)
+      await pdfPlatform().IOUtils.copy(this.outputPath(task, kind), picker.file)
+      rememberTranslatedPDFDirectory(this.host, picker.file)
     }
     } finally { this.storageReaders-- }
+  }
+  /** 自动保存对照译文到上次保存过的目录；不弹窗、不覆盖已有文件，失败不影响任务。 */
+  private async autoSave(task: PDFTranslationTask) {
+    try {
+      if (!readAutoSaveTranslatedPDF(this.host) || !this.hasOutput(task)) return
+      const directory = readTranslatedPDFDirectory(this.host)
+      if (!directory) return
+      const source = await pdfSource(this.host, task.source.itemID)
+      const target = await this.autoSaveTarget(directory, translatedPDFFileName(task.source.title, pdfPlatform().PathUtils.filename(source.path), 'dual'))
+      if (target.replace(/\\/gu, '/').toLowerCase() === source.path.replace(/\\/gu, '/').toLowerCase()) return
+      await pdfPlatform().IOUtils.copy(this.outputPath(task, 'dual'), target)
+    } catch { /* 自动保存失败只放弃本次副本。 */ }
+  }
+  /** 已存在同名文件时不覆盖，追加序号；仍冲突时使用时间戳。 */
+  private async autoSaveTarget(directory: string, fileName: string) {
+    const { IOUtils: io, PathUtils: paths } = pdfPlatform()
+    const base = stripPDFExtension(fileName)
+    for (let index = 1; index <= 20; index++) {
+      const candidate = paths.join(directory, index === 1 ? fileName : `${base} (${index}).pdf`)
+      if (!await io.exists(candidate)) return candidate
+    }
+    return paths.join(directory, `${base} (${Date.now()}).pdf`)
+  }
+  /** 回收没有索引引用的存储：任务目录里被取代的快照，以及已删除文献的成果与版面缓存。 */
+  sweepStorage() { return this.retiring ??= this.sweepRetired().finally(() => { this.retiring = undefined }) }
+  private async sweepRetired() {
+    const { IOUtils: io, PathUtils: paths } = pdfPlatform()
+    this.storageOperations++
+    try {
+      await ensureEngineStorageAvailable(this.host, 'pdf')
+      const root = pdfRuntimeRoot(this.host)
+      // 未完成的清理只放弃本次；单文件失败不影响其他文献。
+      for (const task of this.tasks.values()) {
+        if (!task.artifact || this.controllers.has(task.id)) continue
+        for (const file of await io.getChildren(pdfTaskDirectory(task.id, this.host)).catch(() => [] as string[])) {
+          const name = paths.filename(file)
+          if (!REVISION_FILE.test(name)) continue
+          // 临时稿是重命名中断的残留；正式稿只保留索引当前引用的那一版。
+          if (!name.includes('.tmp.') && name.startsWith(`${task.artifact.revision}-`)) continue
+          await io.remove(file, { ignoreAbsent: true }).catch(() => {})
+        }
+      }
+      // 任务按 itemID、版面清单按 libraryID/itemKey 查询，两种检查齐备才允许删除。
+      if (!readRemoveOrphanTranslatedPDF(this.host) || this.host.Items?.get === undefined || this.host.Items.getByLibraryAndKey === undefined) return
+      const checked: string[] = [], confirmed = new Set<string>(), candidates: { directory: string; identity: string; taskID?: string }[] = []
+      const retired = async (identity: { libraryID: number; itemKey: string; itemID?: number }) => {
+        const key = `${identity.libraryID}/${identity.itemKey}`
+        if (checked.includes(key)) return confirmed.has(key)
+        const item = identity.itemID === undefined ? await this.host.Items?.getByLibraryAndKey?.(identity.libraryID, identity.itemKey) : await this.host.Items?.get?.(identity.itemID)
+        checked.push(key)
+        if (item) { this.retired.delete(key); return false }
+        const first = this.retired.get(key)
+        // 同一轮里版面缓存与任务目录共用结论，缺失时长只累计一次。
+        if (first === undefined || Date.now() - first < ORPHAN_CONFIRM_MS) { this.retired.set(key, Date.now()); return false }
+        confirmed.add(key)
+        return true
+      }
+      for (const task of [...this.tasks.values()]) {
+        if (this.controllers.has(task.id)) continue
+        if (await retired(task.source)) candidates.push({ taskID: task.id, directory: pdfTaskDirectory(task.id, this.host), identity: `${task.source.libraryID}/${task.source.itemKey}` })
+      }
+      const layouts = paths.join(root, 'layouts')
+      for (const folder of await io.getChildren(layouts).catch(() => [] as string[])) {
+        let manifest: { identity?: { attachment?: unknown } }
+        try { manifest = JSON.parse(await io.readUTF8(paths.join(folder, 'layout.json'))) } catch { continue }
+        const attachment = manifest?.identity?.attachment
+        if (!Array.isArray(attachment) || !Number.isInteger(attachment[0]) || typeof attachment[1] !== 'string') continue
+        if (await retired({ libraryID: Number(attachment[0]), itemKey: attachment[1] })) candidates.push({ directory: folder, identity: `${attachment[0]}/${attachment[1]}` })
+      }
+      // 文献库还没就绪时一律不删，避免把查询失败当成用户删除了成果。
+      if (!checked.length || this.host.Libraries?.userLibraryID === undefined) return
+      for (const candidate of candidates) {
+        await io.remove(candidate.directory, { recursive: true, ignoreAbsent: true }).catch(() => {})
+        if (candidate.taskID) this.tasks.delete(candidate.taskID)
+        this.retired.delete(candidate.identity)
+      }
+      if (candidates.length) recordSummary('retired_translations', { total: candidates.length, remaining: this.tasks.size })
+      this.emit()
+    } finally { this.storageOperations-- }
   }
 }
 type PDFHost = ZoteroLike & { __jadensePDFTranslationJobs?: PDFTranslationJobs }

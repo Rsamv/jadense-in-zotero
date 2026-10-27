@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -130,6 +131,22 @@ class PDFOutputTests(unittest.TestCase):
                     self.assertEqual(c[index].rect.width, a[index].rect.width * 2)
                     self.assertEqual(c[index].rect.height, a[index].rect.height)
                 self.assertEqual(b[0].get_text(), a[0].get_text())
+
+    def test_publish_prunes_superseded_snapshots_but_keeps_one_generation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.pdf"
+            fixture(source)
+            first = worker.publish(source, source, root, [])
+            second = worker.publish(source, source, root, [])
+            third = worker.publish(source, source, root, [])
+            present = sorted(path.name for path in root.iterdir() if re.fullmatch(r'[0-9a-f]{32}-(mono|dual)\.pdf', path.name))
+            # 阅读器可能仍持有上一版路径，所以保留两代；更早的快照没有索引引用。
+            self.assertEqual(present, sorted(
+                [f'{third["revision"]}-{kind}.pdf' for kind in ('mono', 'dual')]
+                + [f'{second["revision"]}-{kind}.pdf' for kind in ('mono', 'dual')]))
+            self.assertNotIn(f'{first["revision"]}-mono.pdf', present)
+            with fitz.open(root / f'{third["revision"]}-dual.pdf') as pdf: self.assertEqual(len(pdf), 3)
 
     def test_rejects_mismatched_output_without_publishing(self):
         with tempfile.TemporaryDirectory() as directory:

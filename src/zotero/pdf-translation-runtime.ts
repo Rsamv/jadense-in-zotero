@@ -9,7 +9,7 @@ export const PDF_ADAPTER = 'batch-v4'
 export type PDFEngineProgress = (stage: string, detail?: Record<string, unknown>) => void
 type Process = { pid?: number; stdin: { write(text: string): Promise<unknown>; close(): Promise<unknown> }; stdout: { readString(): Promise<string | null> }; stderr: { readString(): Promise<string | null> }; wait(): Promise<{ exitCode: number }>; kill(): void }
 export type PDFPlatform = {
-  IOUtils: { exists(path: string): Promise<boolean>; makeDirectory(path: string, options: { ignoreExisting: boolean }): Promise<unknown>; read(path: string): Promise<Uint8Array>; readUTF8(path: string): Promise<string>; writeUTF8(path: string, text: string, options?: { tmpPath: string }): Promise<unknown>; copy(from: string, to: string): Promise<unknown>; remove(path: string, options?: { ignoreAbsent: boolean }): Promise<unknown>; getChildren(path: string): Promise<string[]> }
+  IOUtils: { exists(path: string): Promise<boolean>; makeDirectory(path: string, options: { ignoreExisting: boolean }): Promise<unknown>; read(path: string): Promise<Uint8Array>; readUTF8(path: string): Promise<string>; writeUTF8(path: string, text: string, options?: { tmpPath: string }): Promise<unknown>; copy(from: string, to: string): Promise<unknown>; remove(path: string, options?: { recursive?: boolean; ignoreAbsent?: boolean }): Promise<unknown>; getChildren(path: string): Promise<string[]> }
   PathUtils: { profileDir: string; join(...parts: string[]): string; filename(path: string): string }
   ChromeUtils: { importESModule(uri: string): { Subprocess: { getEnvironment(): Record<string, string>; call(options: { command: string; arguments: string[]; environment?: Record<string, string>; stderr: string }): Promise<Process> } } }
 }
