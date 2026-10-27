@@ -759,6 +759,122 @@ function asObject(value: unknown): Record<string, unknown> | null {
 
 const isReviewShape = (value: Record<string, unknown>) => "overview" in value || "papers" in value || "comparison" in value
 
+/**
+ * 把容器内的成员按深度 1 的逗号切开；字符串里的逗号与括号不参与。
+ * 容器没闭合（响应被截断）时，把已有的尾巴也当作一个成员交出去，让上层决定丢不丢。
+ */
+function splitContainerMembers(text: string, open: number): string[] {
+  const members: string[] = []
+  let depth = 0
+  let quoted = false
+  let escaped = false
+  let memberStart = open + 1
+  let closed = false
+  for (let index = open; index < text.length; index += 1) {
+    const char = text[index]
+    if (quoted) {
+      if (escaped) escaped = false
+      else if (char === "\\") escaped = true
+      else if (char === '"') quoted = false
+      continue
+    }
+    if (char === '"') quoted = true
+    else if (char === "{" || char === "[") {
+      depth += 1
+      if (depth === 1) memberStart = index + 1
+    } else if (char === "}" || char === "]") {
+      depth -= 1
+      if (depth === 0) { members.push(text.slice(memberStart, index)); closed = true; break }
+    } else if (char === "," && depth === 1) {
+      members.push(text.slice(memberStart, index))
+      memberStart = index + 1
+    }
+  }
+  if (!closed && depth > 0) members.push(text.slice(memberStart))
+  return members.filter(member => member.trim().length > 0)
+}
+
+/** 取出 `key: value` 里的键与值；键必须是能解析成字符串的引号串，否则这条整条丢掉。 */
+function splitKeyValue(member: string): { key: string; value: string } | null {
+  let quoted = false
+  let escaped = false
+  for (let index = 0; index < member.length; index += 1) {
+    const char = member[index]
+    if (quoted) {
+      if (escaped) escaped = false
+      else if (char === "\\") escaped = true
+      else if (char === '"') quoted = false
+      continue
+    }
+    if (char === '"') quoted = true
+    else if (char === ":") {
+      try {
+        const key = JSON.parse(repairJSONSyntax(member.slice(0, index)).trim())
+        if (typeof key === "string" && key) return { key, value: member.slice(index + 1) }
+      } catch {
+        return null
+      }
+      return null
+    }
+  }
+  return null
+}
+
+/**
+ * 逐字段解析：整体 `JSON.parse` 失败时（一个未转义的引号、一个全角逗号、一次截断），
+ * 仍然把能解析的字段与数组条目捞出来，丢掉的部分计数上报，而不是把整份综述退回纯文字。
+ */
+function tolerantValue(raw: string, dropped: { count: number }, depth: number): unknown {
+  const text = repairJSONSyntax(raw).trim()
+  if (!text) return undefined
+  try {
+    return JSON.parse(text)
+  } catch {
+    // 落到逐字段／逐条目恢复。
+  }
+  if (depth >= 3) { dropped.count += 1; return undefined }
+  if (text.startsWith("[")) {
+    const entries: unknown[] = []
+    for (const member of splitContainerMembers(text, text.indexOf("["))) {
+      const entry = tolerantValue(member, dropped, depth + 1)
+      if (entry !== undefined) entries.push(entry)
+    }
+    return entries.length > 0 ? entries : undefined
+  }
+  if (text.startsWith("{")) {
+    const record: Record<string, unknown> = {}
+    for (const member of splitContainerMembers(text, text.indexOf("{"))) {
+      const pair = splitKeyValue(member)
+      if (!pair) { dropped.count += 1; continue }
+      const entry = tolerantValue(pair.value, dropped, depth + 1)
+      if (entry === undefined) dropped.count += 1
+      else record[pair.key] = entry
+    }
+    return Object.keys(record).length > 0 ? record : undefined
+  }
+  // 被截断的字符串：只有仍以引号开头时才补上收尾引号，其余情况不猜内容。
+  if (text.startsWith('"')) {
+    try {
+      return JSON.parse(`${text.replace(/\\$/u, "")}"`)
+    } catch {
+      dropped.count += 1
+      return undefined
+    }
+  }
+  dropped.count += 1
+  return undefined
+}
+
+function recoverReviewObject(response: string): { value: Record<string, unknown> | null; dropped: number } {
+  const start = response.indexOf("{")
+  if (start < 0) return { value: null, dropped: 0 }
+  const dropped = { count: 0 }
+  const value = tolerantValue(response.slice(start), dropped, 0)
+  const record = asObject(value)
+  if (!record || !isReviewShape(record)) return { value: null, dropped: dropped.count }
+  return { value: record, dropped: dropped.count }
+}
+
 const AVAILABILITY: readonly string[] = ["yes", "no", "unknown"]
 
 /** 模型可能写中文档位或大小写变体；只认已知的几种，其余归到 unclear，不做猜测。 */
@@ -821,7 +937,24 @@ export function parseQuickReview(response: string, papers: readonly QuickReviewP
   const result: QuickReviewResult = { overview: "", papers: [], comparison: [], trends: "", gaps: "", ratings: [], ratingOverview: "", evaluated: options?.evaluate === true, skipped: 0, warnings: [] }
   const warnings = new Set<string>()
   const input = response.slice(0, 256_000)
-  const value = readJSONObject(input, isReviewShape) ?? readJSONObject(repairJSONSyntax(input), isReviewShape)
+  let value = readJSONObject(input, isReviewShape) ?? readJSONObject(repairJSONSyntax(input), isReviewShape)
+  let repaired = false
+  if (!value) {
+    // 整体解析不了时逐字段捞：一个坏字符不该让整份综述退回纯文字。
+    const recovered = recoverReviewObject(input)
+    value = recovered.value
+    if (value) {
+      repaired = true
+      warnings.add(uiText(
+        recovered.dropped > 0
+          ? `模型返回的 JSON 有格式错误，已逐字段恢复，并跳过 ${recovered.dropped} 处无法解析的内容。`
+          : "模型返回的 JSON 有格式错误，已逐字段恢复。",
+        recovered.dropped > 0
+          ? `The response was not valid JSON; it was recovered field by field and ${recovered.dropped} unparsable fragment(s) were dropped.`
+          : "The response was not valid JSON; it was recovered field by field.",
+      ))
+    }
+  }
   if (!value) {
     result.rawText = clip(response, 20_000)
     result.warnings.push(uiText(
@@ -845,6 +978,8 @@ export function parseQuickReview(response: string, papers: readonly QuickReviewP
     const note = (field: string, limit: number) => clip(typeof row?.[field] === "string" ? row![field] as string : "", limit)
     // 数据完整性边界：模型不能引用不存在的序号，也不能凭标题声称读过某篇。
     if (!Number.isInteger(index) || !known.has(index) || seen.has(index) || !row) { result.skipped += 1; continue }
+    // 逐字段恢复可能只剩一个 index 的空壳条目：那不算覆盖，交给"未被覆盖"提示说清楚。
+    if (repaired && Object.keys(PAPER_FIELD_LIMITS).every(field => typeof row[field] !== "string" || !(row[field] as string).trim())) { result.skipped += 1; continue }
     seen.add(index)
     const source = known.get(index)!
     const resourceNote = note("resourceNote", PAPER_FIELD_LIMITS.resourceNote)
@@ -875,6 +1010,8 @@ export function parseQuickReview(response: string, papers: readonly QuickReviewP
     if (!Number.isInteger(index) || !known.has(index) || rated.has(index) || !row) { result.skipped += 1; continue }
     rated.add(index)
     const score = ratingScore(row.score)
+    // 同样是恢复出来的空壳：没有分数也没有一句评价时，不如不显示，免得出现"评价（证据不足）"的空卡片。
+    if (repaired && score === undefined && [row.value, row.novelty, row.basis].every(field => typeof field !== "string" || !field.trim())) { result.skipped += 1; continue }
     result.ratings.push({
       index,
       ...(score !== undefined ? { score } : {}),

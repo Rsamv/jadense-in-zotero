@@ -389,6 +389,39 @@ describe("quick review parsing", () => {
     expect(result.rawText).toBeUndefined()
   })
 
+  it("still reads the digest when the model mixes Chinese punctuation into the JSON", () => {
+    // 真实返回里出现过：正文中的内嵌引号没转义，分隔符写成全角逗号。
+    const response = `{"overview"："作者称"方法有效"，随后给出数据","papers":[{"index":1,"finding":"结论一"，},{"index":2,"finding":"结论二"}],"comparison":[]}`
+    const result = parseQuickReview(response, papers)
+    expect(result.overview).toBe('作者称"方法有效"，随后给出数据')
+    expect(result.papers.map(paper => paper.finding)).toEqual(["结论一", "结论二"])
+    expect(result.rawText).toBeUndefined()
+    expect(result.warnings).toEqual([])
+  })
+
+  it("salvages the readable fields instead of dropping the whole review", () => {
+    // 一个条目彻底坏掉时，其余三篇与总览仍要显示，并如实报出跳过了几处。
+    const broken = `{"overview":"总览","papers":[{"index":1,"hook":"一句话"},{"index":2,"hook":坏掉的条目}],"comparison":[{"dimension":"方法","note":"说明"}]}`
+    const result = parseQuickReview(broken, papers)
+    expect(result.overview).toBe("总览")
+    expect(result.papers.map(paper => paper.index)).toEqual([1])
+    expect(result.comparison).toHaveLength(1)
+    expect(result.rawText).toBeUndefined()
+    expect(result.warnings.join()).toContain("已逐字段恢复，并跳过 2 处无法解析的内容")
+    expect(result.warnings.join()).toContain("有 1 篇未被覆盖")
+  })
+
+  it("keeps what arrived before the response was cut off", () => {
+    const truncated = `{"overview":"总览","papers":[{"index":1,"hook":"一句话"},{"index":2,"hook":"两句话"}],"comparison":[],"ratings":[{"index":1,"score":80,"value":"实用","novelty":"新","basis":"依据"`
+    const result = parseQuickReview(truncated, papers, { evaluate: true })
+    expect(result.overview).toBe("总览")
+    expect(result.papers.map(paper => paper.index)).toEqual([1, 2])
+    // 截断在完整值之后时，评价条目本身是好的，应逐字段恢复出来而不是当成"没评价"。
+    expect(result.ratings).toEqual([{ index: 1, score: 80, level: "high", value: "实用", novelty: "新", basis: "依据" }])
+    expect(result.rawText).toBeUndefined()
+    expect(result.warnings.join()).toContain("已逐字段恢复")
+  })
+
   it("keeps unreadable output as text without claiming any paper was covered", () => {
     const result = parseQuickReview("这两篇文章都讨论端侧推理，但没有给出结构。", papers)
     expect(result.rawText).toContain("端侧推理")

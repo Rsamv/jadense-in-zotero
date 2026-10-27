@@ -190,26 +190,64 @@ function readAnalysisObject(response: string): Record<string, unknown> | null {
   return readJSONObject(response, value => "summary" in value || "sections" in value || "annotations" in value)
 }
 
-/** 仅修复不改变文字语义的 JSON 错误：字符串裸控制字符及容器尾逗号。 */
+/** 字符串外出现的全角结构符号：还原成半角才可能解析，字符串内的中文标点不受影响。 */
+const FULL_WIDTH_STRUCTURE: Record<string, string> = { "，": ",", "：": ":", "｛": "{", "｝": "}", "［": "[", "］": "]" }
+
+/**
+ * 判断这个引号是不是字符串的收尾：合法的 JSON 里，收尾引号后面只能是逗号、冒号、闭合括号或结束。
+ * 中文正文里的引号后面常跟全角标点，所以全角逗号只在"它确实是分隔符"时才算收尾
+ * （后面紧跟 `}`／`]`，或紧跟 `"键"：` 这种下一个字段），否则按漏转义的内嵌引号处理。
+ */
+function closesJSONString(text: string, index: number): boolean {
+  let next = index + 1
+  while (next < text.length && /\s/.test(text[next])) next += 1
+  if (next >= text.length) return true
+  const char = text[next]
+  if (char === "," || char === ":" || char === "}" || char === "]" || char === "：") return true
+  if (char !== "，") return false
+  let after = next + 1
+  while (after < text.length && /\s/.test(text[after])) after += 1
+  const following = text[after]
+  if (following === "}" || following === "]") return true
+  if (following !== '"') return false
+  const keyEnd = text.indexOf('"', after + 1)
+  if (keyEnd < 0) return false
+  let colon = keyEnd + 1
+  while (colon < text.length && /\s/.test(text[colon])) colon += 1
+  return text[colon] === ":" || text[colon] === "："
+}
+
+/** 仅修复不改变文字语义的 JSON 错误：字符串裸控制字符、容器尾逗号、漏转义的内嵌引号，以及字符串外的全角结构符号。 */
 export function repairJSONSyntax(response: string): string {
   let quoted = false
   let escaped = false
   let repaired = ""
   for (let index = 0; index < response.length; index += 1) {
-    const char = response[index]
+    let char = response[index]
     if (quoted) {
       if (escaped) escaped = false
       else if (char === "\\") escaped = true
-      else if (char === '"') quoted = false
-      else if (char.charCodeAt(0) < 32) {
+      else if (char === '"') {
+        if (closesJSONString(response, index)) quoted = false
+        else {
+          // 模型在中文里直接写内嵌引号而忘了转义：补上反斜杠，别让整个字符串结构错位。
+          repaired += "\\\""
+          continue
+        }
+      } else if (char.charCodeAt(0) < 32) {
         repaired += JSON.stringify(char).slice(1, -1)
         continue
       }
-    } else if (char === '"') quoted = true
-    else if (char === ",") {
-      let next = index + 1
-      while (/\s/.test(response[next] ?? "") && next < response.length) next += 1
-      if (response[next] === "}" || response[next] === "]") continue
+    } else {
+      // 中文模型会把结构符号也写成全角（`，}`、`：`）：字符串外一律还原成半角，字符串内不动。
+      const halfWidth = FULL_WIDTH_STRUCTURE[char]
+      if (halfWidth) char = halfWidth
+      if (char === '"') quoted = true
+      else if (char === ",") {
+        let next = index + 1
+        while (/\s/.test(response[next] ?? "") && next < response.length) next += 1
+        if (response[next] === "}" || response[next] === "]") continue
+      }
     }
     repaired += char
   }

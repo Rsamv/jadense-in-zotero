@@ -114,6 +114,19 @@ describe("paper analysis wrapper", () => {
     expect(result.warnings.join(" ")).toContain("修复")
   })
 
+  it("reads full-width structural punctuation and unescaped inner quotes as JSON", () => {
+    // 中文模型常把分隔符打成全角，引用原文时还会漏转义内嵌引号。
+    const result = parsePaperAnalysis(`{"summary"："作者称"方法有效"，随后给出数据","sections":[{"category":"claim"，"summary":"分类内容"}],"annotations":[]}`, passages)
+    expect(result.summary).toBe('作者称"方法有效"，随后给出数据')
+    expect(result.sections).toEqual([{ category: "claim", summary: "分类内容" }])
+  })
+
+  it("keeps a Chinese comma that belongs to the sentence instead of treating it as a separator", () => {
+    const result = parsePaperAnalysis(`{"summary":"第一句，第二句。","annotations":[{"passageId":"p1-s1"，"category":"claim"，"comment":"解释"}]}`, passages)
+    expect(result.summary).toBe("第一句，第二句。")
+    expect(result.annotations).toHaveLength(1)
+  })
+
   it("closes missing JSON containers after complete values instead of losing an object-shaped section", () => {
     const response = '{"summary":"完整总结","sections":{"methods":"完整方法"'
     const result = parsePaperAnalysis(response, passages)
