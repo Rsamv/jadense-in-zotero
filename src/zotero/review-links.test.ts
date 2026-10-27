@@ -116,6 +116,11 @@ describe('attachment link scanning', () => {
       { title: 'Additional Training Details', page: 10, attachmentID: 101 },
     ])
     expect(scanned.rows[0].attachmentScanned).toBe(true)
+    // 正文一级小节也带页：与版面统计同一套标题，点一下就能翻到标题所在页。
+    expect(scanned.rows[0].sectionRefs).toEqual([
+      { title: 'Method', page: 3, attachmentID: 101 },
+      { title: 'Experiments', page: 5, attachmentID: 101 },
+    ])
     // 版面统计只带标题与计数：正文那句"compare with three baselines"本身不外发，只留下命中次数。
     expect(scanned.rows[0].structure).toEqual({ headings: ['Method', 'Experiments'], figures: 1, tables: 1, references: null, ablation: 1, baselines: 2, humanEval: 0 })
     expect(scanned).toMatchObject({ scanned: 1, parsed: 1, found: 1, withAppendix: 1, withStructure: 1, noAttachment: 0, pages: 10, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false })

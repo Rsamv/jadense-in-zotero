@@ -134,6 +134,8 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
   const included = new Set<string>()
   /** 序号 → 这一篇的深读结果：卡片与复制文本都从这里取，换一批综述就清空。 */
   let deepReads = new Map<number, StoredDeepRead>()
+  /** 被收起证据框的篇目序号：换一批综述时一并清空，新结果默认展开。 */
+  const collapsedEvidence = new Set<number>()
 
   const currentCollection = () => collections.find(entry => String(entry.id) === collectionPick.getValue()) ?? null
   const chosenRows = () => rows.filter(row => included.has(rowKey(row))).slice(0, Number(limitPick.getValue()) || QUICK_REVIEW_DEFAULT_LIMIT)
@@ -286,8 +288,8 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     if (typeof launcher !== 'function') { status.textContent = uiText('当前 Zotero 版本无法打开外部链接。', 'This Zotero build cannot open external links.'); return }
     try { launcher.call(host, href) } catch { status.textContent = uiText('无法打开该链接。', 'The link could not be opened.') }
   }
-  /** 附录小节跳页：阅读器按 PDF 物理页定位，pageIndex 从 0 开始。 */
-  const openAppendixPage = async (ref: ReviewAppendixRef) => {
+  /** 小节跳页：阅读器按 PDF 物理页定位，pageIndex 从 0 开始。附录与正文小节共用这一个入口。 */
+  const openReaderPage = async (ref: ReviewAppendixRef) => {
     // Reader 的签名在各子系统里各不相同，这里只认"能带页码打开附件"这一种用法。
     const reader = (host as ZoteroLike & { Reader?: { open?(itemID: number, location?: { pageIndex?: number }): unknown | Promise<unknown> } }).Reader
     if (typeof reader?.open !== 'function') { status.textContent = uiText('当前 Zotero 版本无法在阅读器中定位页码。', 'This Zotero build cannot jump to a page in the reader.'); return }
@@ -323,7 +325,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
       const numbered = `${position + 1}. ${title}`
       const ref = refOf(title)
       if (!ref) { row.append(make('span', numbered, 'jdx-review-appendix-item')); return }
-      const jump = button(numbered, () => { void openAppendixPage(ref) }, 'jdx-review-appendix-item jdx-review-jump')
+      const jump = button(numbered, () => { void openReaderPage(ref) }, 'jdx-review-appendix-item jdx-review-jump')
       jump.title = uiText(`在 Zotero 阅读器中打开第 ${ref.page} 页`, `Open page ${ref.page} in the Zotero reader`)
       jump.append(make('small', uiText(`第 ${ref.page} 页`, `p. ${ref.page}`), 'jdx-review-jump-page'))
       row.append(jump)
@@ -368,13 +370,77 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     )
     if (paper.structure?.headings.length) {
       const titles = make('div', '', 'jdx-review-links')
-      titles.append(make('span', uiText('正文一级小节', 'Top-level sections'), 'jdx-review-links-label'))
-      for (const title of paper.structure.headings) titles.append(make('span', title, 'jdx-review-appendix-item'))
+      const label = make('span', uiText('正文一级小节', 'Top-level sections'), 'jdx-review-links-label')
+      const refs = paper.sectionRefs
+      const refOf = (title: string) => refs?.find(entry => entry.title.toLowerCase() === title.toLowerCase())
+      if (paper.structure.headings.some(title => refOf(title))) {
+        label.title = uiText('点击小节可在 Zotero 阅读器中跳到该页', 'Click a section to jump to its page in the Zotero reader')
+      }
+      titles.append(label)
+      for (const title of paper.structure.headings) {
+        const ref = refOf(title)
+        if (!ref) { titles.append(make('span', title, 'jdx-review-appendix-item')); continue }
+        const jump = button(title, () => { void openReaderPage(ref) }, 'jdx-review-appendix-item jdx-review-jump')
+        jump.title = uiText(`在 Zotero 阅读器中打开第 ${ref.page} 页`, `Open page ${ref.page} in the Zotero reader`)
+        jump.append(make('small', uiText(`第 ${ref.page} 页`, `p. ${ref.page}`), 'jdx-review-jump-page'))
+        titles.append(jump)
+      }
       const wrap = make('div', '', 'jdx-review-structure')
       wrap.append(row, titles)
       return wrap
     }
     return row
+  }
+  /**
+   * 折叠栏上的账目：不展开也要能看出这篇扫到了什么。
+   * 只写有内容的项——没扫附件就写"未扫描"，而不是三个 0 排成一行。
+   */
+  const evidenceSummary = (paper: QuickReviewDisplayPaper) => {
+    const parts: string[] = []
+    const scan = reviewScanState(paper)
+    if (scan === 'parsed') parts.push(uiText(`附件 ${paper.scanPages ?? 0} 页`, `${paper.scanPages ?? 0} page(s)`))
+    else if (scan === 'noAttachment') parts.push(uiText('无 PDF 附件', 'no PDF attachment'))
+    else if (scan === 'oversize') parts.push(uiText('附件超 60 MB', 'attachment over 60 MB'))
+    else if (scan === 'unreadable') parts.push(uiText('附件读取失败', 'attachment unreadable'))
+    else if (scan === 'unavailable') parts.push(uiText('附件未能读取', 'attachment unavailable'))
+    else if (scan === 'notScanned') parts.push(uiText('附件未扫描', 'attachment not scanned'))
+    if (paper.links?.length) parts.push(uiText(`链接 ${paper.links.length} 条`, `${paper.links.length} link(s)`))
+    if (paper.appendix?.length) parts.push(uiText(`附录 ${paper.appendix.length} 部分`, `${paper.appendix.length} appendix section(s)`))
+    else if (paper.appendixMarked) parts.push(uiText('有附录', 'appendix present'))
+    if (paper.structure?.headings.length) parts.push(uiText(`正文小节 ${paper.structure.headings.length} 节`, `${paper.structure.headings.length} body section(s)`))
+    return parts.join(' · ')
+  }
+  /**
+   * 本机证据单独成框：附件账目、版面统计、正文小节、本地链接与附录都收在这里，
+   * 与下面的模型评价分开——这些是客户端读出来的，不是模型说的。
+   * 默认展开（第一次看到时不该先藏起来）；折叠状态只在本窗口内记住。
+   */
+  const evidencePanel = (paper: QuickReviewDisplayPaper) => {
+    const rows: HTMLElement[] = []
+    const scan = evidenceRow(paper); if (scan) rows.push(scan)
+    const structure = structureRow(paper); if (structure) rows.push(structure)
+    if (paper.links?.length) rows.push(linksRow(paper.links))
+    if (paper.appendix?.length) rows.push(appendixRow(paper.appendix, paper.appendixRefs))
+    if (!rows.length) return null
+    const collapsed = collapsedEvidence.has(paper.index)
+    const panel = make('section', '', 'jdx-review-evidence-panel')
+    const head = make('div', '', 'jdx-review-evidence-panel-head')
+    head.append(make('span', uiText('本机证据', 'Local evidence'), 'jdx-review-evidence-panel-title'))
+    head.append(make('span', evidenceSummary(paper), 'jdx-review-evidence-panel-summary'))
+    const panelBody = make('div', '', 'jdx-review-evidence-panel-body')
+    for (const row of rows) panelBody.append(row)
+    panelBody.hidden = collapsed
+    const toggle = button(collapsed ? uiText('展开', 'Show') : uiText('收起', 'Hide'), () => {
+      const next = !panelBody.hidden
+      panelBody.hidden = next
+      if (next) collapsedEvidence.add(paper.index); else collapsedEvidence.delete(paper.index)
+      toggle.textContent = next ? uiText('展开', 'Show') : uiText('收起', 'Hide')
+      toggle.setAttribute('aria-expanded', String(!next))
+    }, 'jdx-review-evidence-panel-toggle')
+    toggle.setAttribute('aria-expanded', String(!collapsed))
+    head.append(toggle)
+    panel.append(head, panelBody)
+    return panel
   }
   /**
    * 深读账目与结果：先写清"本机读了多少页、送出去哪几节多少字"，再给结论，
@@ -402,7 +468,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
       for (const section of read.sections) {
         const text = uiText(`${section.heading}（${section.part === 'tail' ? '节尾' : '节首'}，第 ${section.page} 页）`, `${section.heading} (${section.part === 'tail' ? 'tail' : 'head'}, p. ${section.page})`)
         if (!section.attachmentID) { account.append(make('span', text, 'jdx-review-appendix-item')); continue }
-        const jump = button(text, () => { void openAppendixPage({ title: section.heading, page: section.page, attachmentID: section.attachmentID! }) }, 'jdx-review-appendix-item jdx-review-jump')
+        const jump = button(text, () => { void openReaderPage({ title: section.heading, page: section.page, attachmentID: section.attachmentID! }) }, 'jdx-review-appendix-item jdx-review-jump')
         jump.title = uiText(`在 Zotero 阅读器中打开第 ${section.page} 页`, `Open page ${section.page} in the Zotero reader`)
         account.append(jump)
       }
@@ -431,12 +497,9 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     card.append(make('h4', `${paper.index}. ${paper.title}`))
     const meta = [paper.authors, paper.year, paper.publication].filter(Boolean).join(' · ')
     if (meta) card.append(make('p', meta, 'jdx-review-card-meta'))
-    const evidence = evidenceRow(paper)
-    if (evidence) card.append(evidence)
-    const structure = structureRow(paper)
-    if (structure) card.append(structure)
-    if (paper.links?.length) card.append(linksRow(paper.links))
-    if (paper.appendix?.length) card.append(appendixRow(paper.appendix, paper.appendixRefs))
+    // 作者行之下、代码／数据徽章之上：本机读出来的证据整块收在一个可折叠框里。
+    const panel = evidencePanel(paper)
+    if (panel) card.append(panel)
     if (!note) {
       card.append(fieldsBlock([], [uiText('状态', 'Status'), uiText('模型未覆盖本篇。', 'The model did not cover this paper.')]))
     } else {
@@ -702,6 +765,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
       rows = collected.rows; scanned = collected.scanned; truncated = collected.truncated
       view = null
       deepReads = new Map()
+      collapsedEvidence.clear()
       resultBox.replaceChildren(make('p', uiText('尚未生成综述。选择收藏夹后点击「生成综述」，一次调用汇总整个子分类。', 'No review yet. Pick a collection and generate one summary for the whole sub-collection.')))
       status.textContent = ''
       renderRows(); renderHistory()
@@ -731,6 +795,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
       view = outcome
       // 新的一批综述＝新的一条记录：上一批的深读不属于它，留着会挂到别的文献上。
       deepReads = new Map()
+      collapsedEvidence.clear()
       paintResult(outcome.result, outcome.papers)
       const finished = outcome.historySaved
         ? uiText('综述已完成并写入本机历史。', 'Review finished and saved in local history.')

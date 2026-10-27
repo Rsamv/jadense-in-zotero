@@ -7,7 +7,7 @@
  * 唯一会送出正文片段的是单篇深读（readDeepReadExcerpt）：它只读用户点开的那一篇，
  * 且只交出切好的有界摘录，切不出来就返回 null，由界面拒绝派发。
  */
-import { ANNOTATION_LINK_PAGES, extractAnnotationReviewLinks, extractReviewLinks, extractReviewStructure, hasReviewAppendix, locateReviewAppendixSections, mergeReviewAppendix, mergeReviewAppendixRefs, normalizeReviewLinks, normalizeReviewStructure, type QuickReviewScanOutcome, type ReviewAppendixRef, type ReviewAppendixSection, type ReviewPaperRow, type ReviewStructure } from '@/chat/quick-review'
+import { ANNOTATION_LINK_PAGES, extractAnnotationReviewLinks, extractReviewLinks, extractReviewStructure, hasReviewAppendix, locateReviewAppendixSections, locateReviewBodySections, mergeReviewAppendix, mergeReviewAppendixRefs, mergeReviewSectionRefs, normalizeReviewLinks, normalizeReviewStructure, reviewPageLineEntries, type QuickReviewScanOutcome, type ReviewAppendixRef, type ReviewAppendixSection, type ReviewPaperRow, type ReviewStructure } from '@/chat/quick-review'
 import { deepReadSectionText, extractDeepReadExcerpt, type DeepReadExcerpt } from '@/chat/review-deep-read'
 import { uiText } from './ui-preferences'
 import type { ZoteroLike } from './runtime'
@@ -126,7 +126,7 @@ async function attachmentPath(attachment: NativeRecord): Promise<string> {
   return typeof syncPath === "string" && syncPath.trim() ? syncPath.trim() : ""
 }
 
-type AttachmentScanResult = { links: string[]; appendix: string[]; sections: ReviewAppendixSection[]; marked: boolean; pages: number; structure: ReviewStructure | null; outcome: AttachmentOutcome }
+type AttachmentScanResult = { links: string[]; appendix: string[]; sections: ReviewAppendixSection[]; sectionRefs: ReviewAppendixSection[]; marked: boolean; pages: number; structure: ReviewStructure | null; outcome: AttachmentOutcome }
 
 /**
  * 读盘 → 交给 pdf.js → 用完销毁；失败统一报成一种处置结果。
@@ -169,7 +169,7 @@ async function withAttachmentPdf<T>(
 
 /** 单个附件：读盘 → 解析取证页 → 抽链接与附录标题；失败只算这一篇没有附加证据，并说明卡在哪一步。 */
 async function attachmentScan(read: (path: string) => Promise<ArrayBuffer | Uint8Array>, pdfjs: Awaited<ReturnType<typeof loadPdfModule>>, path: string, base: string): Promise<AttachmentScanResult> {
-  const failed = (outcome: AttachmentOutcome): AttachmentScanResult => ({ links: [], appendix: [], sections: [], marked: false, pages: 0, structure: null, outcome })
+  const failed = (outcome: AttachmentOutcome): AttachmentScanResult => ({ links: [], appendix: [], sections: [], sectionRefs: [], marked: false, pages: 0, structure: null, outcome })
   const parsed = await withAttachmentPdf(read, pdfjs, path, base, async pdf => {
     const pages = evidencePageNumbers(pdf.numPages, MAX_PAGES_PER_ATTACHMENT)
     const pageTexts = await readPdfPageTexts(pdf, pages)
@@ -178,10 +178,15 @@ async function attachmentScan(read: (path: string) => Promise<ArrayBuffer | Uint
     const annotationLinks = extractAnnotationReviewLinks(await readPdfPageLinks(pdf, pages.filter(page => page <= ANNOTATION_LINK_PAGES)))
     // 小节标题连同页码一起留下：卡片上点标题就能翻到那一页。
     const sections = locateReviewAppendixSections(pageTexts)
+    // 正文一级小节用与版面统计同一套行：标题认错会让统计和跳页一起错，两边不能各认一套。
+    const entries = reviewPageLineEntries(pageTexts)
+    const sectionRefs = locateReviewBodySections(entries.map(entry => entry.text))
+      .map(section => ({ title: section.title, page: entries[section.line].page }))
     return {
       links: normalizeReviewLinks([...extractReviewLinks(text), ...annotationLinks]),
       appendix: sections.map(section => section.title),
       sections,
+      sectionRefs,
       marked: hasReviewAppendix(text),
       pages: pages.length,
       // 版面统计与链接同一次解析里顺手数出来：不额外读盘，也不取正文句子。
@@ -348,8 +353,8 @@ export async function scanRowsForAttachmentLinks(input: {
   const appendix = new Map<string, string[]>()
   /** 标题 → 附件与页码：界面据此跳到附录所在页，附件 ID 只留在本机。 */
   const appendixRefs = new Map<string, ReviewAppendixRef[]>()
-  /** 一篇有多个附件时，取读过页数最多的那个附件的版面统计。 */
-  const structures = new Map<string, { structure: ReviewStructure; pages: number }>()
+  /** 一篇有多个附件时，取读过页数最多的那个附件的版面统计；正文小节页码跟着同一份附件走。 */
+  const structures = new Map<string, { structure: ReviewStructure; sections: ReviewAppendixSection[]; attachmentID: number; pages: number }>()
   const marked = new Set<string>()
   /** 每篇读过多少页：卡片上要能写出这个数，"扫过"才不是一句空话。 */
   const rowPages = new Map<string, number>()
@@ -395,12 +400,14 @@ export async function scanRowsForAttachmentLinks(input: {
       rowPages.set(key, (rowPages.get(key) ?? 0) + scan.pages)
       if (scan.links.length) links.set(key, [...(links.get(key) ?? []), ...scan.links])
       if (scan.marked) marked.add(key)
+      const refID = Number(attachmentID)
       if (scan.structure) {
         const previous = structures.get(key)
-        if (!previous || scan.pages > previous.pages) structures.set(key, { structure: scan.structure, pages: scan.pages })
+        if (!previous || scan.pages > previous.pages) {
+          structures.set(key, { structure: scan.structure, sections: scan.sectionRefs, attachmentID: refID, pages: scan.pages })
+        }
       }
       if (scan.appendix.length) appendix.set(key, [...(appendix.get(key) ?? []), ...scan.appendix])
-      const refID = Number(attachmentID)
       if (scan.sections.length && Number.isInteger(refID) && refID > 0) {
         appendixRefs.set(key, [...(appendixRefs.get(key) ?? []), ...scan.sections.map(section => ({ ...section, attachmentID: refID }))])
       }
@@ -430,12 +437,20 @@ export async function scanRowsForAttachmentLinks(input: {
     const rowRefs = mergeReviewAppendixRefs([...(row.appendixRefs ?? []), ...(appendixRefs.get(key) ?? [])])
     const rowStructure = structures.get(key)
     if (rowStructure) withStructure += 1
+    // 正文小节页码只在附件 ID 有效时才成立：没有 ID 就点不到那一页，宁可不给。
+    const rowSectionRefs = mergeReviewSectionRefs([
+      ...(row.sectionRefs ?? []),
+      ...(rowStructure && Number.isInteger(rowStructure.attachmentID) && rowStructure.attachmentID > 0
+        ? rowStructure.sections.map(section => ({ ...section, attachmentID: rowStructure.attachmentID }))
+        : []),
+    ])
     return {
       ...row,
       links: normalizeReviewLinks([...(row.links ?? []), ...(links.get(key) ?? [])]),
       appendix: rowAppendix,
       ...(rowRefs.length ? { appendixRefs: rowRefs } : {}),
       ...(rowStructure ? { structure: rowStructure.structure } : {}),
+      ...(rowSectionRefs.length ? { sectionRefs: rowSectionRefs } : {}),
       appendixMarked: rowMarked,
       attachmentScanned: true,
       scanPages: (row.scanPages ?? 0) + (rowPages.get(key) ?? 0),

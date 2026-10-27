@@ -4,7 +4,7 @@ import { uiText } from "@/zotero/ui-preferences"
  * 与单篇解析历史分开保存：记录归属收藏夹而非某个附件，且只缓存可读文字，不承载任何库内写入输入。
  */
 import type { QuickReviewAvailability, QuickReviewDisplayPaper, QuickReviewPaperNote, QuickReviewPaperRating, QuickReviewRatingLevel, QuickReviewResult, QuickReviewScanOutcome, ReviewAppendixRef, ReviewStructure } from "./quick-review"
-import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, mergeReviewAppendix, mergeReviewAppendixRefs, normalizeReviewLinks, normalizeReviewStructure, ratingLevelForScore } from "./quick-review"
+import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, mergeReviewAppendix, mergeReviewAppendixRefs, mergeReviewSectionRefs, normalizeReviewLinks, normalizeReviewStructure, ratingLevelForScore } from "./quick-review"
 import { normalizeDeepRead, type StoredDeepRead } from "./review-deep-read"
 
 export const QUICK_REVIEW_HISTORY_PREF_KEY = "extensions.jadenseInZotero.quickReviewHistory"
@@ -42,6 +42,8 @@ export type QuickReviewRecordPaper = {
   scanOutcome?: QuickReviewScanOutcome
   /** 0.6.13.11 起保存本机版面统计：历史点开时结构行与当时一致。 */
   structure?: ReviewStructure
+  /** 0.6.13.13 起保存正文小节的附件与页码：旧综述重开时点标题同样能翻页。 */
+  sectionRefs?: ReviewAppendixRef[]
   /**
    * 0.6.13.12 起保存单篇深读结果：深读发生在综述落库之后，因此单独写回这一篇，不重存整条记录。
    */
@@ -127,6 +129,23 @@ function normalizeAppendixRefs(value: unknown, titles: readonly string[]): Revie
   return mergeReviewAppendixRefs(refs)
 }
 
+/** 正文小节同样只认已保存的标题：跳页目标必须能在版面统计里找到，否则就是坏记录凭空造出的一节。 */
+function normalizeSectionRefs(value: unknown, headings: readonly string[]): ReviewAppendixRef[] {
+  if (!headings.length || !Array.isArray(value)) return []
+  const refs: ReviewAppendixRef[] = []
+  for (const entry of value) {
+    const row = object(entry)
+    const rawTitle = text(row?.title, 80)
+    const page = libraryNumber(row?.page)
+    const attachmentID = libraryNumber(row?.attachmentID)
+    if (!rawTitle || page === undefined || page < 1 || attachmentID === undefined || attachmentID < 1) continue
+    const match = headings.find(saved => saved.toLowerCase() === rawTitle.toLowerCase())
+    if (!match) continue
+    refs.push({ title: match, page, attachmentID })
+  }
+  return mergeReviewSectionRefs(refs)
+}
+
 function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
   const row = object(value)
   const libraryID = libraryNumber(row?.libraryID)
@@ -140,6 +159,7 @@ function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
     : []
   const appendixRefs = normalizeAppendixRefs(row?.appendixRefs, appendix)
   const structure = normalizeReviewStructure(row?.structure)
+  const sectionRefs = normalizeSectionRefs(row?.sectionRefs, structure?.headings ?? [])
   const deepRead = normalizeDeepRead(row?.deepRead)
   return {
     libraryID,
@@ -158,6 +178,7 @@ function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
     ...(typeof row?.scanPages === "number" && Number.isFinite(row.scanPages) && row.scanPages >= 0 ? { scanPages: Math.round(row.scanPages) } : {}),
     ...(SCAN_OUTCOMES.includes(row?.scanOutcome as QuickReviewScanOutcome) ? { scanOutcome: row!.scanOutcome as QuickReviewScanOutcome } : {}),
     ...(structure ? { structure } : {}),
+    ...(sectionRefs.length ? { sectionRefs } : {}),
     ...(deepRead ? { deepRead } : {}),
   }
 }
@@ -277,6 +298,7 @@ export function quickReviewRecordView(record: QuickReviewRecord): { result: Quic
       ...(typeof paper.scanPages === "number" ? { scanPages: paper.scanPages } : {}),
       ...(SCAN_OUTCOMES.includes(paper.scanOutcome as QuickReviewScanOutcome) ? { scanOutcome: paper.scanOutcome } : {}),
       ...(paper.structure ? { structure: paper.structure } : {}),
+      ...(paper.sectionRefs?.length ? { sectionRefs: paper.sectionRefs } : {}),
     }
   })
   return {

@@ -1,5 +1,14 @@
 # 更新说明 / Changelog
 
+## 0.6.13.13 — 2026-10-27
+
+- 卡片中段收进一个可折叠的**「本机证据」框**：作者行之下、代码／数据徽章之上，附件账目、版面统计、正文一级小节、本地链接与附录原本是四五行平铺，现在同属一个独立描边的框，标题栏右侧写摘要（`附件 13 页 · 链接 2 条 · 附录 3 部分 · 正文小节 7 节`），点「收起／展开」折叠内容。默认展开，与下方模型评价框分成两块，谁读的、谁判的一眼可分。折叠状态只在本窗口内记住，换一批综述即复位；那一篇没有任何本机证据时整块不画。
+- **正文一级小节可点击跳页**：扫描时给每个小节记下它所在的页与附件，卡片上的小节标题从纯文本变成按钮（带「第 3 页」），点一下调用 `Zotero.Reader.open(附件 itemID, { pageIndex })` 翻到那一页，与附录小节的跳转共用同一入口。标题用的就是版面统计里那一套，统计与跳页不会各认一套。
+- 跳页信息（`sectionRefs`）只在本机流转：不进请求载荷，也不进「复制全文」；历史记录保存它，重开旧综述仍能跳。回读时标题必须确实出现在已保存的版面统计标题里，页码与附件 ID 必须是正整数，坏记录不能凭空造出一个可点小节。
+- Turns the middle of each card into one collapsible **"Local evidence" box**, sitting between the author line and the code/data badges: attachment tally, layout counts, top-level body sections, local links and appendix titles were four or five loose rows and are now one bordered panel whose header summarises them (`13 page(s) · 2 link(s) · 3 appendix section(s) · 7 body section(s)`) and toggles the body. It starts expanded and is visually separate from the model rating below, so "measured locally" and "judged by the model" are no longer one block; the collapsed state lives only in the current window and resets with the next batch, and a paper with no local evidence gets no panel at all.
+- **Top-level body sections are now clickable**: the scan records each section's page and attachment, so a section title on the card becomes a button with its page number and calls `Zotero.Reader.open(attachmentID, { pageIndex })` — the same entry point the appendix sections use, fed by the same heading list as the layout counts so the two cannot disagree.
+- The jump data (`sectionRefs`) stays local: it never enters the request payload or the copied text, and history persists it so an old review still jumps. On read, a title must already be listed in the saved layout headings and page and attachment IDs must be positive integers, so a malformed record cannot invent a clickable section.
+
 ## 0.6.13.12 — 2026-10-27
 
 - 新增**本机版面统计**：扫描附件时顺手数出每篇的一级小节标题（最多 12 条）、图数量、表数量、参考文献条数，以及「消融／ablation」「基线／baseline／state-of-the-art／compared with」「人工评测／user study／human evaluation」三组关键词命中次数。外发的只有标题文字与计数，正文一句不出机器；提示词把这一行标成「本机数出，非模型判断」，模型不得把计数当成自己的阅读结论。卡片与「复制全文」显示同一行，参考文献数不出来时写「未数出」而不是 0；历史记录回读时字段类型不对就整条丢掉。

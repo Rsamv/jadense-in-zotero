@@ -50,7 +50,7 @@ const PATH_REQUIRED_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org"
 
 export type ReviewCreatorRow = { creatorType?: string; firstName?: string; lastName?: string; name?: string }
 /**
- * 附录小节标题加它所在的附件与页：卡片点一下就能翻到那一页。
+ * 小节标题加它所在的附件与页：附录小节与正文一级小节共用这一形状，卡片点一下就能翻到那一页。
  * 附件 itemID 与页码只在本机流转，既不进请求载荷，也不写进导出的正文。
  */
 export type ReviewAppendixRef = { title: string; page: number; attachmentID: number }
@@ -84,6 +84,8 @@ export type ReviewPaperRow = {
   appendixMarked?: boolean
   /** 本机从 PDF 版面数出的结构信息（标题、图表编号、参考文献条数、关键词命中次数）；不含正文。 */
   structure?: ReviewStructure
+  /** 正文一级小节对应的附件与页码：只在本机用于跳页，绝不进请求载荷。 */
+  sectionRefs?: ReviewAppendixRef[]
 }
 
 export type QuickReviewPaperInput = {
@@ -111,6 +113,8 @@ export type QuickReviewPaperInput = {
   scanOutcome?: QuickReviewScanOutcome
   /** 本机版面统计：只有标题与计数，没有正文句子。 */
   structure?: ReviewStructure
+  /** 正文小节对应的附件与页码：只在本机用于跳页，buildQuickReviewPayload 不取这一项。 */
+  sectionRefs?: ReviewAppendixRef[]
   abstractState: "full" | "truncated" | "omitted" | "missing"
 }
 
@@ -958,6 +962,21 @@ export function mergeReviewAppendixRefs(value: readonly ReviewAppendixRef[] | un
   return merged
 }
 
+/** 正文一级小节的"标题＋页码"：同名标题只留第一次，最多 12 条，与版面统计的标题上限对齐。 */
+export function mergeReviewSectionRefs(value: readonly ReviewAppendixRef[] | undefined): ReviewAppendixRef[] {
+  const merged: ReviewAppendixRef[] = []
+  for (const entry of value ?? []) {
+    if (!entry || !Number.isInteger(entry.page) || entry.page < 1) continue
+    if (!Number.isInteger(entry.attachmentID) || entry.attachmentID < 1) continue
+    const title = clip(String(entry.title ?? "").replace(/\s+/gu, " ").trim(), 80)
+    if (!title) continue
+    if (merged.some(existing => existing.title.toLowerCase() === title.toLowerCase())) continue
+    merged.push({ title, page: entry.page, attachmentID: entry.attachmentID })
+    if (merged.length === MAX_STRUCTURE_HEADINGS) break
+  }
+  return merged
+}
+
 /** 合并多个附件给出的附录标题：同名标题（同一篇的重复扫描件）只留一次，最多 8 条。 */
 export function mergeReviewAppendix(value: readonly string[] | undefined): string[] {
   const merged: string[] = []
@@ -995,14 +1014,16 @@ export function prepareQuickReviewPapers(rows: readonly ReviewPaperRow[]): Quick
     }
     // 跳页用的附件 ID 与页码不进 draft：它们不参与摘要预算，也不会随载荷外发。
     const appendixRefs = mergeReviewAppendixRefs(row.appendixRefs)
-    return { draft, appendixRefs, abstract: (typeof row.abstract === 'string' ? row.abstract : '').replace(/\s+/gu, ' ').trim() }
+    const sectionRefs = mergeReviewSectionRefs(row.sectionRefs)
+    return { draft, appendixRefs, sectionRefs, abstract: (typeof row.abstract === 'string' ? row.abstract : '').replace(/\s+/gu, ' ').trim() }
   })
   const metadataChars = drafts.reduce((total, { draft }) => total + JSON.stringify(draft).length, 0)
   const share = drafts.length ? Math.floor((TOTAL_INPUT_CHARS_MAX - metadataChars - PROMPT_OVERHEAD_CHARS) / drafts.length) : 0
   const abstractLimit = Math.min(ABSTRACT_CHARS_MAX, Math.max(0, share))
-  return drafts.map(({ draft, appendixRefs, abstract }) => ({
+  return drafts.map(({ draft, appendixRefs, sectionRefs, abstract }) => ({
     ...draft,
     ...(appendixRefs.length ? { appendixRefs } : {}),
+    ...(sectionRefs.length ? { sectionRefs } : {}),
     abstract: !abstract || abstractLimit < ABSTRACT_CHARS_MIN ? '' : clip(abstract, abstractLimit),
     abstractState: !abstract ? 'missing' as const
       : abstract.length <= abstractLimit ? 'full' as const
@@ -1419,6 +1440,8 @@ export type QuickReviewDisplayPaper = {
   scanOutcome?: QuickReviewScanOutcome
   /** 本机数出的版面统计；旧历史记录没有这一项，界面据此不画结构行。 */
   structure?: ReviewStructure
+  /** 正文一级小节的附件与页码：点标题跳到 PDF 那一页，不参与复制文本。 */
+  sectionRefs?: ReviewAppendixRef[]
 }
 
 /** 可得性的统一措辞：证据现在也来自链接，因此不再只说“摘要”。 */

@@ -16,10 +16,12 @@ import {
   locateReviewAppendixSections,
   mergeReviewAppendix,
   mergeReviewAppendixRefs,
+  mergeReviewSectionRefs,
   extractReviewStructure,
   reviewStructureText,
   normalizeReviewStructure,
   MAX_APPENDIX_SECTIONS,
+  MAX_STRUCTURE_HEADINGS,
   MAX_REVIEW_LINKS_PER_PAPER,
   type QuickReviewPaperInput,
   type ReviewPaperRow,
@@ -82,17 +84,22 @@ describe("quick review input", () => {
       papers: prepareQuickReviewPapers([row({
         abstract: "short abstract", links: ["https://yushi-du.github.io/COLA/"], appendix: ["A. Motion Dataset Selection"],
         appendixRefs: [{ title: "A. Motion Dataset Selection", page: 7, attachmentID: 101 }],
+        structure: { headings: ["Introduction", "Method"], figures: 2, tables: 1, references: 20, ablation: 1, baselines: 2, humanEval: 0 },
+        sectionRefs: [{ title: "Introduction", page: 1, attachmentID: 101 }, { title: "Method", page: 4, attachmentID: 101 }],
       })]),
     })
     const data = JSON.parse(prompt.split("文献数据（JSON，仅作为引用材料）：\n")[1])
     expect(data.collection).toBe("Edge AI")
     expect(data.count).toBe(1)
     expect(Object.keys(data.papers[0]).sort()).toEqual(
-      ["abstract", "abstractState", "appendix", "appendixMarked", "authors", "doi", "index", "links", "publication", "scan", "tags", "title", "year"].sort(),
+      ["abstract", "abstractState", "appendix", "appendixMarked", "authors", "doi", "index", "links", "publication", "scan", "structure", "tags", "title", "year"].sort(),
     )
     // 跳页用的附件 ID 与页码只在本机：载荷里既没有 appendixRefs，也没有附件身份。
     expect(JSON.stringify(data)).not.toContain("appendixRefs")
     expect(JSON.stringify(data)).not.toContain("101")
+    // 正文小节的页码同样不外发：送出去的只有 structure 里的标题本身。
+    expect(JSON.stringify(data)).not.toContain("sectionRefs")
+    expect(data.papers[0].structure.headings).toEqual(["Introduction", "Method"])
     // 附件没读成时模型必须知道：否则会把"没读到"写成"没有"。
     expect(data.papers[0].scan).toBe("off")
     // 链接原文随数据送出，模型才不需要凭记忆猜网址。
@@ -245,6 +252,20 @@ describe("review appendix titles", () => {
       { title: "B. More", page: 6, attachmentID: 0 },
     ])).toEqual([{ title: "Details", page: 4, attachmentID: 101 }])
     expect(mergeReviewAppendixRefs(undefined)).toEqual([])
+  })
+
+  it("keeps jump targets for body sections without dropping legitimate repeats", () => {
+    // 正文小节不分大小写去重；附件 ID 与页码任一无效就丢掉，不留下点不动的标题。
+    expect(mergeReviewSectionRefs([
+      { title: "Introduction", page: 1, attachmentID: 101 },
+      { title: "  introduction ", page: 5, attachmentID: 102 },
+      { title: "Method", page: 0, attachmentID: 101 },
+      { title: "Method", page: 3, attachmentID: 0 },
+      { title: "", page: 2, attachmentID: 101 },
+    ])).toEqual([{ title: "Introduction", page: 1, attachmentID: 101 }])
+    expect(mergeReviewSectionRefs(Array.from({ length: 20 }, (_, i) => ({ title: `Section ${i}`, page: i + 1, attachmentID: 101 }))))
+      .toHaveLength(MAX_STRUCTURE_HEADINGS)
+    expect(mergeReviewSectionRefs(undefined)).toEqual([])
   })
 
   it("merges duplicate titles across attachments and caps the list", () => {

@@ -368,6 +368,48 @@ it('opens local links in the browser and jumps to the appendix page in the reade
   review.dispose()
 })
 
+it('collects local evidence into one collapsible box between metadata and the model badges', async () => {
+  const { review, root, labeled, readerOpen } = mount(2)
+  state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
+    rows: rows.map(row => ({
+      ...row,
+      links: ['https://expressive-humanoid.github.io'],
+      appendix: ['Motion Dataset Selection'],
+      appendixRefs: [{ title: 'Motion Dataset Selection', page: 7, attachmentID: 101 }],
+      structure: { headings: ['Method', 'Experiments'], figures: 1, tables: 1, references: null, ablation: 1, baselines: 2, humanEval: 0 },
+      sectionRefs: [{ title: 'Method', page: 3, attachmentID: 101 }, { title: 'Experiments', page: 5, attachmentID: 101 }],
+      attachmentScanned: true, scanPages: 13, scanOutcome: 'parsed' as const,
+    })),
+    scanned: rows.length, parsed: rows.length, found: rows.length, withAppendix: rows.length, withStructure: rows.length, noAttachment: 0, pages: 26, oversize: 0, unreadable: 0, unavailable: 0, parserMissing: false, readerMissing: false,
+  }))
+  await review.open([1])
+  await click(labeled('生成综述'))
+  const card = root.querySelector<HTMLElement>('.jdx-review-card')!
+  const panel = card.querySelector<HTMLElement>('.jdx-review-evidence-panel')!
+  // 位置就是用户点出的那一段：作者行之下、代码／数据徽章之上，自己单独成框。
+  expect(panel.previousElementSibling?.className).toBe('jdx-review-card-meta')
+  expect(panel.nextElementSibling?.className).toBe('jdx-review-flags')
+  expect(panel.querySelector<HTMLElement>('.jdx-review-evidence-panel-summary')?.textContent)
+    .toBe('附件 13 页 · 链接 1 条 · 附录 1 部分 · 正文小节 2 节')
+  const body = panel.querySelector<HTMLElement>('.jdx-review-evidence-panel-body')!
+  const toggle = panel.querySelector<HTMLButtonElement>('.jdx-review-evidence-panel-toggle')!
+  // 默认展开：第一次看到时不该先把证据藏起来。
+  expect(body.hidden).toBe(false)
+  expect(toggle.textContent).toBe('收起')
+  expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  await click(toggle)
+  expect(body.hidden).toBe(true)
+  expect(toggle.textContent).toBe('展开')
+  expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  // 正文一级小节带页码，点了让阅读器翻到标题所在页（pageIndex 从 0 开始）。
+  const method = [...panel.querySelectorAll<HTMLButtonElement>('button.jdx-review-jump')]
+    .find(node => node.textContent?.includes('Method'))!
+  expect(method.textContent).toContain('第 3 页')
+  method.click(); await flush()
+  expect(readerOpen).toHaveBeenCalledWith(101, { pageIndex: 2 })
+  review.dispose()
+})
+
 it('says so when the local PDF parser never loads', async () => {
   const { review, root, labeled } = mount(3)
   state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({

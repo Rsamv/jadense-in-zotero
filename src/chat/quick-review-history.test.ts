@@ -105,7 +105,14 @@ const structuredRecord = (): QuickReviewRecord => ({
         { title: "B. 没存进小节的标题", page: 9, attachmentID: 101 },
         { title: "A. Motion Dataset Selection", page: 0, attachmentID: 101 },
       ],
-      structure: { headings: ["Introduction", "Method"], figures: 6, tables: 2, references: 41, ablation: 3, baselines: 5, humanEval: 0 } },
+      structure: { headings: ["Introduction", "Method"], figures: 6, tables: 2, references: 41, ablation: 3, baselines: 5, humanEval: 0 },
+      sectionRefs: [
+        { title: "Introduction", page: 1, attachmentID: 101 },
+        { title: "Method", page: 3, attachmentID: 101 },
+        { title: "Method", page: 0, attachmentID: 101 },
+        { title: "Conclusion", page: 6, attachmentID: 101 },
+        { title: "Introduction", page: 2, attachmentID: 0 },
+      ] },
     { libraryID: 1, itemKey: "PAPER2", title: "Edge compilers", authors: "Chen Rui", year: "2024", publication: "MLSys", index: 2, abstractState: "missing",
       // 全空的版面统计等于"没数出来"：不能存成一条 0，否则历史里会显示"图 0 · 表 0"。
       structure: { headings: [], figures: 0, tables: 0, references: null, ablation: 0, baselines: 0, humanEval: 0 } },
@@ -149,6 +156,12 @@ describe("quick review history restore", () => {
     // 版面统计随记录保存，历史点开才能复原"本机数出"的那一行；全空的一条不存。
     expect(restored?.papers[0].structure).toEqual({ headings: ["Introduction", "Method"], figures: 6, tables: 2, references: 41, ablation: 3, baselines: 5, humanEval: 0 })
     expect(restored?.papers[1].structure).toBeUndefined()
+    // 正文小节跳页只认版面统计里确有的标题：坏页码、坏附件 ID、列表外的标题都不留。
+    expect(restored?.papers[0].sectionRefs).toEqual([
+      { title: "Introduction", page: 1, attachmentID: 101 },
+      { title: "Method", page: 3, attachmentID: 101 },
+    ])
+    expect(restored?.papers[1].sectionRefs).toBeUndefined()
     expect(restored?.result.ratings.map(rating => rating.index).sort()).toEqual([1, 2])
     // 分数写入后档位由分数折算；旧记录没有分数时才沿用模型档位。
     expect(restored?.result.ratings.find(rating => rating.index === 2)).toMatchObject({ score: 55, level: "low" })

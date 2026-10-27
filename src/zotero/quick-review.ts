@@ -294,6 +294,7 @@ export async function runQuickReview(input: {
       attachmentScanned: paper.attachmentScanned === true, scanPages: paper.scanPages ?? 0,
       ...(paper.scanOutcome ? { scanOutcome: paper.scanOutcome } : {}),
       ...(paper.structure ? { structure: paper.structure } : {}),
+      ...(paper.sectionRefs?.length ? { sectionRefs: paper.sectionRefs } : {}),
       appendixMarked: paper.appendixMarked === true,
     })),
     overview: result.overview,

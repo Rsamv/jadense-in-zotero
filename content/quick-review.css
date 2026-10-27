@@ -86,6 +86,16 @@ button.jdx-review-link:hover, button.jdx-review-jump:hover { border-color: var(-
 .jdx-review-jump-page { margin-left: 5px; font-size: 10px; opacity: .7; }
 /* 每篇的扫描账目：0 条也要写出来，否则"扫过没有"会被读成"没扫"。 */
 .jdx-review-evidence { font-size: 11px; line-height: 1.5; color: var(--jdx-muted, #66766d); margin: 0 0 6px; }
+/* 本机证据单独成框：附件账目、版面统计、正文小节、链接与附录都在这里，与下面的模型评价分开。 */
+.jdx-review-evidence-panel { border: 1px solid var(--jdx-line-strong); border-left: 3px solid var(--jdx-line-strong); border-radius: 8px; margin: 0 0 8px; background: var(--jdx-surface); }
+.jdx-review-evidence-panel-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 8px; padding: 6px 10px; }
+.jdx-review-evidence-panel-title { font-size: 11px; font-weight: 600; letter-spacing: .02em; opacity: .8; }
+.jdx-review-evidence-panel-summary { flex: 1; min-width: 0; font-size: 11px; line-height: 1.5; color: var(--jdx-muted, #66766d); }
+.jdx-review-evidence-panel-toggle { flex: none; font: inherit; font-size: 11px; line-height: 1.5; padding: 0 8px; border: 1px solid var(--jdx-line-strong); border-radius: 999px; background: var(--jdx-sidebar); color: inherit; cursor: pointer; }
+.jdx-review-evidence-panel-toggle:hover { border-color: var(--jdx-green); }
+.jdx-review-evidence-panel-body { padding: 0 10px 4px; border-top: 1px dashed var(--jdx-line-strong); }
+.jdx-review-evidence-panel-body[hidden] { display: none; }
+.jdx-review-evidence-panel-body > :first-child { margin-top: 6px; }
 /* 版面统计与它的一级小节清单是一组：一起留白，两行之间只留窄缝。 */
 .jdx-review-structure { margin: 0 0 6px; }
 .jdx-review-structure .jdx-review-evidence { margin: 0 0 4px; }
