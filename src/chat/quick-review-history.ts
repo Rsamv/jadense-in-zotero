@@ -4,7 +4,7 @@ import { uiText } from "@/zotero/ui-preferences"
  * 与单篇解析历史分开保存：记录归属收藏夹而非某个附件，且只缓存可读文字，不承载任何库内写入输入。
  */
 import type { QuickReviewAvailability, QuickReviewDisplayPaper, QuickReviewPaperNote, QuickReviewPaperRating, QuickReviewRatingLevel, QuickReviewResult, QuickReviewScanOutcome, ReviewAppendixRef } from "./quick-review"
-import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, mergeReviewAppendix, mergeReviewAppendixRefs, normalizeReviewLinks } from "./quick-review"
+import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, mergeReviewAppendix, mergeReviewAppendixRefs, normalizeReviewLinks, ratingLevelForScore } from "./quick-review"
 
 export const QUICK_REVIEW_HISTORY_PREF_KEY = "extensions.jadenseInZotero.quickReviewHistory"
 
@@ -100,7 +100,7 @@ const AVAILABILITY: readonly string[] = ["yes", "no", "unknown"]
 const LEVELS: readonly string[] = ["high", "medium", "low", "unclear"]
 
 /**
- * 跳页信息只认整数页码与附件 ID，且标题必须真的出现在已保存的小节列表里：
+ * 跳页信息只认整数页码与附件 ID，且标题必须真的是已保存小节（剥掉编号后比对）：
  * 坏记录不能借这一栏凭空造出一个可点小节，也不能指到不存在的页。
  */
 function normalizeAppendixRefs(value: unknown, titles: readonly string[]): ReviewAppendixRef[] {
@@ -108,13 +108,16 @@ function normalizeAppendixRefs(value: unknown, titles: readonly string[]): Revie
   const refs: ReviewAppendixRef[] = []
   for (const entry of value) {
     const row = object(entry)
-    const title = text(row?.title, 120)
+    const rawTitle = text(row?.title, 120)
     const page = libraryNumber(row?.page)
     const attachmentID = libraryNumber(row?.attachmentID)
-    if (!title || page === undefined || page < 1 || attachmentID === undefined || attachmentID < 1) continue
-    refs.push({ title, page, attachmentID })
+    if (!rawTitle || page === undefined || page < 1 || attachmentID === undefined || attachmentID < 1) continue
+    const title = mergeReviewAppendix([rawTitle])[0]
+    const match = title ? titles.find(saved => saved.toLowerCase() === title.toLowerCase()) : undefined
+    if (!match) continue
+    refs.push({ title: match, page, attachmentID })
   }
-  return mergeReviewAppendixRefs(refs).filter(ref => titles.some(title => title.toLowerCase() === ref.title.toLowerCase()))
+  return mergeReviewAppendixRefs(refs)
 }
 
 function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
@@ -177,11 +180,15 @@ function normalizeStructure(value: unknown, indexes: ReadonlySet<number>, papers
     const item = object(entry)
     const index = indexNumber(item?.index)
     if (index === undefined || !indexes.has(index) || ratings.some(existing => existing.index === index)) continue
+    const rawScore = typeof item?.score === "string" ? Number(item.score.trim()) : item?.score
+    const score = typeof rawScore === "number" && Number.isFinite(rawScore) ? Math.min(100, Math.max(0, Math.round(rawScore))) : undefined
     ratings.push({
       index,
+      ...(score !== undefined ? { score } : {}),
       value: text(item?.value, RATING_FIELD_LIMITS.value),
       novelty: text(item?.novelty, RATING_FIELD_LIMITS.novelty),
-      level: (LEVELS.includes(String(item?.level)) ? item?.level : "unclear") as QuickReviewRatingLevel,
+      // 有分数时档位由分数折算，历史回显不会出现"中等 85/100"这种矛盾。
+      level: score !== undefined ? ratingLevelForScore(score) : (LEVELS.includes(String(item?.level)) ? item?.level : "unclear") as QuickReviewRatingLevel,
       basis: text(item?.basis, RATING_FIELD_LIMITS.basis),
     })
     if (ratings.length >= MAX_RATINGS) break

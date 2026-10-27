@@ -47,6 +47,23 @@ const AVAILABILITY_CLASS: Record<QuickReviewAvailability, string> = {
 const RATING_CLASS: Record<QuickReviewRatingLevel, string> = {
   high: 'jdx-review-flag-high', medium: 'jdx-review-flag-medium', low: 'jdx-review-flag-low', unclear: 'jdx-review-flag-unclear',
 }
+/** 代码/数据的判定口径直接写在悬停提示里：同屏能解释为什么是"未见说明"。 */
+const RESOURCE_RULE: Record<'code' | 'data', string> = {
+  code: uiText(
+    '代码的判定：只有带仓库路径的代码地址（如 github.com/账号/仓库、gitlab.com/账号/仓库、huggingface.co/spaces/…），或正文明确写“代码已开源/开放”才算明确给出。项目主页、数据集网站、论文落地页，以及“将开源”“审稿后开源”的承诺都不算。',
+    'Code counts only with a repository URL (e.g. github.com/user/repo, gitlab.com/user/repo, huggingface.co/spaces/…) or text stating the code is released/open. Project homepages, dataset sites, paper landing pages, and promises ("will be released", "upon acceptance") do not count.'),
+  data: uiText(
+    '数据的判定：只有带数据集路径的地址（如 huggingface.co/datasets/…、zenodo.org/record/…），或正文明确写“数据集已公开/已发布”才算明确给出。数据由作者提供、可向作者索取、承诺后续发布都不算。',
+    'Data counts only with a dataset URL (e.g. huggingface.co/datasets/…, zenodo.org/record/…) or text stating the dataset is public/released. Data "available from the authors", on request, or promised later does not count.'),
+}
+/** 评分口径：悬停分数时复述量程与档位，评分依据放在最后一行。 */
+const ratingHoverText = (rating: { level: QuickReviewRatingLevel; basis: string; score?: number }) => [
+  uiText(
+    `内容评分 ${rating.score ?? '—'}/100（五个维度各 20 分：问题价值、方法创新、证据强度、可复现性、应用潜力；写作、排版、图表、期刊档次与引用量不计分）。`,
+    `Content score ${rating.score ?? '—'}/100 (five 20-point dimensions: problem value, methodological novelty, strength of evidence, reproducibility, applicability; writing, layout, figures, venue, and citations are excluded).`),
+  uiText('档位：80 及以上＝高；65–79＝中；50–64＝低；低于 50＝无法判断。', 'Levels: 80+ high; 65–79 medium; 50–64 low; below 50 unclear.'),
+  ...(rating.basis ? [uiText(`评分依据：${rating.basis}`, `Basis: ${rating.basis}`)] : []),
+].join('\n')
 
 export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: () => void) {
   const make = <K extends keyof HTMLElementTagNameMap>(tag: K, text = '', className = '') => {
@@ -184,9 +201,9 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
         else if (scan === 'oversize') text.append(make('em', uiText('PDF 超 60 MB', 'PDF over 60 MB'), 'jdx-review-badge'))
         else if (scan === 'unreadable') text.append(make('em', uiText('PDF 读取失败', 'PDF unreadable'), 'jdx-review-badge'))
       }
-      if (row.appendix?.length) text.append(make('em', uiText(`附录 ${row.appendix.length} 节`, `${row.appendix.length} appendix section(s)`), 'jdx-review-badge'))
+      if (row.appendix?.length) text.append(make('em', uiText(`附录 ${row.appendix.length} 部分`, `${row.appendix.length} appendix section(s)`), 'jdx-review-badge'))
       // 读到标记但排不出编号也算"有附录"：不写这一条，用户会以为附录检测没做。
-      else if (row.appendixMarked) text.append(make('em', uiText('有附录（未列小节）', 'appendix present (sections unnumbered)'), 'jdx-review-badge'))
+      else if (row.appendixMarked) text.append(make('em', uiText('有附录（未列出部分）', 'appendix present (sections unnumbered)'), 'jdx-review-badge'))
       label.append(input, text); paperList.append(label)
     }
     if (rows.length > visible.length) paperList.append(make('p', uiText(`收藏夹内还有 ${rows.length - visible.length} 篇未列出；请先在 Zotero 中拆分收藏夹。`, `${rows.length - visible.length} further papers are hidden. Split the collection in Zotero first.`)))
@@ -223,8 +240,11 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
   }
   const resourceBadges = (note: QuickReviewResult['papers'][number]) => {
     const row = make('div', '', 'jdx-review-flags')
-    for (const [kind, value] of [[uiText('代码', 'Code'), note.code], [uiText('数据', 'Data'), note.data]] as const) {
-      row.append(make('span', `${kind}：${reviewAvailabilityText(value)}`, `jdx-review-flag ${AVAILABILITY_CLASS[value]}`))
+    for (const [resource, kind, value] of [['code', uiText('代码', 'Code'), note.code], ['data', uiText('数据', 'Data'), note.data]] as const) {
+      const flag = make('span', `${kind}：${reviewAvailabilityText(value)}`, `jdx-review-flag ${AVAILABILITY_CLASS[value]}`)
+      // 判定口径就在徽章上，用户不必猜"明确给出"是按什么算的。
+      flag.title = RESOURCE_RULE[resource]
+      row.append(flag)
     }
     if (note.resourceNote) row.append(make('span', note.resourceNote, 'jdx-review-flag-note'))
     return row
@@ -268,23 +288,24 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     return row
   }
   /**
-   * 附录标题同样只是本机证据：只说明这篇有附录、大致分几节，不代表读过附录内容。
-   * 扫描记下页码的小节点一下就能在阅读器里翻到那一页；没有页码的保持纯文本。
+   * 附录标题同样只是本机证据：只说明这篇有附录、大致分几部分，不代表读过附录内容。
+   * 只列顶层标题并顺序编号，不把大小标题混在一起；扫描记下页码的点一下就能翻到那一页。
    */
   const appendixRow = (titles: string[], refs: ReviewAppendixRef[] | undefined) => {
     const row = make('div', '', 'jdx-review-links')
     const refOf = (title: string) => refs?.find(entry => entry.title.toLowerCase() === title.toLowerCase())
-    row.append(make('span', titles.some(title => refOf(title))
-      ? uiText('附录小节（点击跳到该页）', 'Appendix sections (click to jump)')
-      : uiText('附录小节', 'Appendix sections'), 'jdx-review-links-label'))
-    for (const title of titles) {
+    const label = make('span', uiText('附录存在，包括以下部分：', 'Appendix present, with these sections:'), 'jdx-review-links-label')
+    if (titles.some(title => refOf(title))) label.title = uiText('点击小节可在 Zotero 阅读器中跳到该页', 'Click a section to jump to its page in the Zotero reader')
+    row.append(label)
+    titles.forEach((title, position) => {
+      const numbered = `${position + 1}. ${title}`
       const ref = refOf(title)
-      if (!ref) { row.append(make('span', title, 'jdx-review-appendix-item')); continue }
-      const jump = button(title, () => { void openAppendixPage(ref) }, 'jdx-review-appendix-item jdx-review-jump')
+      if (!ref) { row.append(make('span', numbered, 'jdx-review-appendix-item')); return }
+      const jump = button(numbered, () => { void openAppendixPage(ref) }, 'jdx-review-appendix-item jdx-review-jump')
       jump.title = uiText(`在 Zotero 阅读器中打开第 ${ref.page} 页`, `Open page ${ref.page} in the Zotero reader`)
       jump.append(make('small', uiText(`第 ${ref.page} 页`, `p. ${ref.page}`), 'jdx-review-jump-page'))
       row.append(jump)
-    }
+    })
     return row
   }
   /**
@@ -299,7 +320,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     const row = make('div', '', 'jdx-review-evidence')
     const links = paper.links?.length ?? 0
     const sections = paper.appendix?.length ?? 0
-    const appendix = sections ? uiText(`附录小节 ${sections} 节`, `${sections} appendix section(s)`) : paper.appendixMarked ? uiText('有附录（未列小节）', 'appendix present (unnumbered)') : uiText('未见附录', 'no appendix')
+    const appendix = sections ? uiText(`附录存在（${sections} 部分）`, `appendix present (${sections} section(s))`) : paper.appendixMarked ? uiText('有附录（未列出部分）', 'appendix present (unnumbered)') : uiText('未见附录', 'no appendix')
     // 没读成附件时说"读了 0 页"会被读成"这篇确实什么都没有"：每种失败各说各的。
     row.textContent = scan === 'parsed'
       ? uiText(`附件：读了 ${paper.scanPages ?? 0} 页 · 发现链接 ${links} 条 · ${appendix}`, `Attachment: ${paper.scanPages ?? 0} page(s) read · ${links} link(s) · ${appendix}`)
@@ -344,6 +365,12 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     const card = make('aside', '', 'jdx-review-rating')
     const title = make('h4', uiText('模型评价', 'Model rating'), 'jdx-review-rating-title')
     title.append(make('span', rating ? reviewRatingText(rating.level) : uiText('未评价', 'Not rated'), `jdx-review-flag ${RATING_CLASS[rating?.level ?? 'unclear']}`))
+    // 分数给出量程，档位只是分数的文字说明；悬停复述评分口径与依据。
+    if (rating?.score !== undefined) {
+      const score = make('span', `${rating.score}/100`, 'jdx-review-score')
+      score.title = ratingHoverText(rating)
+      title.append(score)
+    }
     card.append(title)
     card.append(fieldsBlock(rating
       ? [
@@ -352,6 +379,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
         [uiText('依据', 'Basis'), rating.basis],
       ]
       : [], !rating ? [uiText('状态', 'Status'), uiText('模型未评价本篇。', 'The model did not rate this paper.')] : undefined))
+    if (rating?.score !== undefined) card.append(make('p', uiText('内容评分（不含写作与期刊因素）；悬停分数可看评分口径。', 'Content score (writing and venue excluded); hover the score for the rubric.'), 'jdx-review-rating-note'))
     return card
   }
 

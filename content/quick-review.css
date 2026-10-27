@@ -68,6 +68,9 @@
 .jdx-review-flag-low { color: #a2312a; border-color: rgb(162 49 42 / 45%); background: rgb(162 49 42 / 12%); }
 .jdx-review-flag-unknown, .jdx-review-flag-unclear { color: var(--jdx-muted, #66766d); border-color: rgb(102 118 109 / 45%); background: rgb(102 118 109 / 12%); }
 .jdx-review-flag-note { font-size: 12px; opacity: .75; line-height: 1.5; flex-basis: 100%; }
+/* 评分徽章：数字是量程内的实际得分，悬停显示口径；cursor: help 提示可悬停。 */
+.jdx-review-score { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; font-weight: 600; line-height: 1.5; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--jdx-line-strong); background: var(--jdx-sidebar); cursor: help; }
+.jdx-review-rating-note { font-size: 11px; opacity: .7; line-height: 1.5; margin: 4px 0 0; }
 /* 本地发现的链接：等宽、可整段选中，但不做成可点击的链接。 */
 .jdx-review-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; }
 .jdx-review-links-label { font-size: 11px; color: var(--jdx-muted, #66766d); }

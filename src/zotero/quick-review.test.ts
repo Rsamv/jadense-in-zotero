@@ -85,8 +85,8 @@ const ratingJSON = JSON.stringify({
   papers: [{ index: 1, hook: "成本基线", idea: "绕开结构改动，压推理链路", experiments: "在单款移动 NPU 上对比基线", tools: "TFLite", code: "yes", data: "unknown", resourceNote: "摘要称代码随论文发布" }],
   comparison: [{ dimension: "代码可得性", note: "1 明确开源，2 未说明。" }],
   ratings: [
-    { index: 1, value: "可直接复用", novelty: "增量改进", level: "中", basis: "40% 为作者自述，需看正文确认" },
-    { index: 9, value: "越界的一篇", novelty: "编造", level: "high", basis: "" },
+    { index: 1, score: 68, value: "可直接复用", novelty: "增量改进", level: "中", basis: "40% 为作者自述，需看正文确认" },
+    { index: 9, score: 90, value: "越界的一篇", novelty: "编造", level: "high", basis: "" },
   ],
   rating_overview: "这批文献偏工程实用。",
 })
@@ -307,10 +307,9 @@ describe("quick review with ratings", () => {
     expect(input.messages[0].text).toContain("不得根据常识、期刊或“这类论文通常会开源”推断")
     // 题录里发现的链接随数据一起外发，模型才能引用真实网址。
     expect(input.messages[0].text).toContain("https://github.com/tiny/attn")
-    expect(result.result.ratings.map(rating => rating.index)).toEqual([1])
-    expect(result.result.ratings[0].level).toBe("medium")
+    expect(result.result.ratings).toEqual([expect.objectContaining({ index: 1, score: 68, level: "medium" })])
     expect(result.result.skipped).toBe(1)
-    expect(result.text).toContain("评价（中等）：实用价值：可直接复用")
+    expect(result.text).toContain("内容评分（中等 · 68/100）：实用价值：可直接复用")
     expect(result.text).toContain("开源代码：明确给出")
     expect(result.text).toContain("总体评价")
   })
@@ -322,8 +321,8 @@ describe("quick review with ratings", () => {
     await runQuickReview({ zotero: host, collection: collection!, rows, session: newQuickReviewSession(), signal: new AbortController().signal, evaluate: true, services: { send } })
     expect(send).toHaveBeenCalledTimes(1)
     expect(send.mock.calls[0][0].responseFormat).toBeUndefined()
-    expect(send.mock.calls[0][0].messages[0].text).toContain("level 只能取下面锚点里对得上的那一档")
-    // BYOK 也只改提示词：请求参数里没有采样旋钮，档位靠锚点而不是靠调温度稳定。
+    expect(send.mock.calls[0][0].messages[0].text).toContain("score 锚点（同一批文献用同一把尺子")
+    // BYOK 也只改提示词：请求参数里没有采样旋钮，分数靠锚点而不是靠调温度稳定。
     expect(Object.keys(send.mock.calls[0][0]).filter(key => /temperature|top_p|seed|sampling/iu.test(key))).toEqual([])
   })
 

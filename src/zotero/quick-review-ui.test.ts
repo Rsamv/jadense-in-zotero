@@ -70,7 +70,7 @@ const outcome = (rows: ReviewPaperRow[], evaluate = false): QuickReviewRunResult
     papers: covered.map(entry => ({ index: entry.index, hook: '端侧注意力压缩', question: '问题', idea: '思路', method: '方法', experiments: '单款设备对比', finding: '结论', limitation: '局限', tools: 'TFLite', code: 'yes', data: 'unknown', resourceNote: '摘要称代码随论文发布' })),
     comparison: [{ dimension: '优化对象', note: '差异说明' }],
     trends: '脉络说明', gaps: '空白说明',
-    ...(evaluate ? { ratings: covered.map(entry => ({ index: entry.index, value: '可复用', novelty: '增量', level: 'medium', basis: '仅摘要证据' })), rating_overview: '整体偏工程实用。' } : {}),
+    ...(evaluate ? { ratings: covered.map(entry => ({ index: entry.index, score: 72, value: '可复用', novelty: '增量', level: 'medium', basis: '仅摘要证据' })), rating_overview: '整体偏工程实用。' } : {}),
   })
   const result = parseQuickReview(response, papers, { evaluate })
   const text = formatQuickReview(result, papers, '快速解析 · ML')
@@ -283,7 +283,7 @@ it('shows appendix titles from the local pages without wiping the user tick mark
   const { review, root, labeled } = mount(3)
   state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
     rows: rows.map((row, position) => position === 0
-      ? { ...row, links: ['https://expressive-humanoid.github.io'], appendix: ['A. Motion Dataset Selection', 'B. Additional Training Details'], attachmentScanned: true, scanPages: 13, scanOutcome: 'parsed' as const }
+      ? { ...row, links: ['https://expressive-humanoid.github.io'], appendix: ['Motion Dataset Selection', 'Additional Training Details'], attachmentScanned: true, scanPages: 13, scanOutcome: 'parsed' as const }
       : { ...row, attachmentScanned: true, scanPages: 0, scanOutcome: 'oversize' as const }),
     scanned: rows.length, parsed: rows.length - 1, found: 1, withAppendix: 1, noAttachment: 0, pages: 26, oversize: 1, unreadable: 0, unavailable: 0, parserMissing: false, readerMissing: false,
   }))
@@ -291,17 +291,19 @@ it('shows appendix titles from the local pages without wiping the user tick mark
   const boxes = () => [...root.querySelectorAll<HTMLInputElement>('.jdx-review-papers input[type="checkbox"]')]
   boxes()[2].checked = false; boxes()[2].dispatchEvent(new Event('change'))
   await click(labeled('生成综述'))
-  // 扫描回填会重画清单：徽章补上附录小节，用户取消的勾选必须原样保留。
-  expect([...root.querySelectorAll('.jdx-review-paper-row .jdx-review-badge')].map(node => node.textContent)).toContain('附录 2 节')
+  // 扫描回填会重画清单：徽章补上附录部分，用户取消的勾选必须原样保留。
+  expect([...root.querySelectorAll('.jdx-review-paper-row .jdx-review-badge')].map(node => node.textContent)).toContain('附录 2 部分')
   expect(boxes()[2].checked).toBe(false)
   expect([...root.querySelectorAll('.jdx-review-appendix-item')].map(node => node.textContent))
-    .toEqual(['A. Motion Dataset Selection', 'B. Additional Training Details'])
+    .toEqual(['1. Motion Dataset Selection', '2. Additional Training Details'])
   // 扫描回执在结果之后仍然可见：不然"没扫到链接"会被读成"论文没有链接"。取消勾选的那篇不进扫描。
   expect(statusText(root)).toContain('读了 1 篇 PDF 共 26 页')
   expect(statusText(root)).toContain('1 篇超过 60 MB')
   // 每篇卡片都写出扫描账目：0 条也要写，否则沉默会被读成"没扫"。
   expect([...root.querySelectorAll('.jdx-review-evidence')].map(node => node.textContent))
-    .toContain('附件：读了 13 页 · 发现链接 1 条 · 附录小节 2 节')
+    .toContain('附件：读了 13 页 · 发现链接 1 条 · 附录存在（2 部分）')
+  // 标题行按用户要求的口径：只列一级标题并顺序编号。
+  expect([...root.querySelectorAll('.jdx-review-links-label')].map(node => node.textContent)).toContain('附录存在，包括以下部分：')
   review.dispose()
 })
 
@@ -311,8 +313,8 @@ it('opens local links in the browser and jumps to the appendix page in the reade
     rows: rows.map(row => ({
       ...row,
       links: ['https://expressive-humanoid.github.io'],
-      appendix: ['A. Motion Dataset Selection'],
-      appendixRefs: [{ title: 'A. Motion Dataset Selection', page: 7, attachmentID: 101 }],
+      appendix: ['Motion Dataset Selection'],
+      appendixRefs: [{ title: 'Motion Dataset Selection', page: 7, attachmentID: 101 }],
       attachmentScanned: true, scanPages: 13, scanOutcome: 'parsed' as const,
     })),
     scanned: rows.length, parsed: rows.length, found: rows.length, withAppendix: rows.length, noAttachment: 0, pages: 26, oversize: 0, unreadable: 0, unavailable: 0, parserMissing: false, readerMissing: false,
@@ -326,7 +328,7 @@ it('opens local links in the browser and jumps to the appendix page in the reade
   expect(launcher).toHaveBeenCalledWith('https://expressive-humanoid.github.io/')
   // 附录小节带页码：点一下让阅读器定位到同一页，pageIndex 从 0 开始。
   const jump = root.querySelector<HTMLButtonElement>('button.jdx-review-jump')!
-  expect(jump.textContent).toContain('A. Motion Dataset Selection')
+  expect(jump.textContent).toContain('1. Motion Dataset Selection')
   expect(jump.textContent).toContain('第 7 页')
   jump.click(); await flush()
   expect(readerOpen).toHaveBeenCalledWith(101, { pageIndex: 6 })
@@ -375,6 +377,12 @@ it('pairs each digest card with its rating so they scroll together', async () =>
   expect(pairs[1].querySelector('.jdx-review-card h4')?.textContent).toContain('1. Paper 1')
   expect(pairs[1].querySelector('.jdx-review-rating')?.textContent).toContain('中等')
   expect(pairs[1].querySelector('.jdx-review-flag-medium')).not.toBeNull()
+  // 分数给量程，悬停说明评分口径（只评内容，不评写作与期刊）。
+  const score = pairs[1].querySelector<HTMLElement>('.jdx-review-score')
+  expect(score?.textContent).toBe('72/100')
+  expect(score?.getAttribute('title')).toContain('内容评分 72/100')
+  expect(score?.getAttribute('title')).toContain('写作、排版')
+  expect(score?.getAttribute('title')).toContain('仅摘要证据')
   expect([...pairs[1].querySelectorAll('.jdx-review-fields dt')].map(node => node.textContent))
     .toEqual(['一句话', '问题', '思路', '方法', '实验流程', '结论', '局限', '工具', '实用价值', '创新性', '依据'])
   expect([...root.querySelectorAll('.jdx-review-flag-yes')].map(node => node.textContent)).toContain('代码：明确给出')

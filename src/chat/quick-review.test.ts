@@ -199,9 +199,9 @@ describe("review appendix titles", () => {
 
   it("reads section titles only after an appendix marker line", () => {
     expect(detectReviewAppendix(pages)).toEqual([
-      "A. Motion Dataset Selection",
-      "B. Additional Training Details",
-      "C. Additional Real World Results Visualization",
+      "Motion Dataset Selection",
+      "Additional Training Details",
+      "Additional Real World Results Visualization",
     ])
   })
 
@@ -211,8 +211,8 @@ describe("review appendix titles", () => {
   })
 
   it("accepts supplementary and Chinese markers with CJK titles", () => {
-    expect(detectReviewAppendix("SUPPLEMENTARY MATERIAL\nD. Hyperparameters\nsome prose\nE. Robot Model")).toEqual(["D. Hyperparameters", "E. Robot Model"])
-    expect(detectReviewAppendix("附录：\nA. 额外实验\nB. More Details")).toEqual(["A. 额外实验", "B. More Details"])
+    expect(detectReviewAppendix("SUPPLEMENTARY MATERIAL\nD. Hyperparameters\nsome prose\nE. Robot Model")).toEqual(["Hyperparameters", "Robot Model"])
+    expect(detectReviewAppendix("附录：\nA. 额外实验\nB. More Details")).toEqual(["额外实验", "More Details"])
     // 句号收尾的整句正文不算标题。
     expect(detectReviewAppendix("Appendix\nA. We evaluate on four datasets.")).toEqual([])
   })
@@ -226,12 +226,12 @@ describe("review appendix titles", () => {
     ])
     // 页码与标题来自同一行：卡片点标题就能翻到正文真正开始的那一页。
     expect(located).toEqual([
-      { title: "A. Motion Dataset Selection", page: 3 },
-      { title: "B. Additional Training Details", page: 5 },
+      { title: "Motion Dataset Selection", page: 3 },
+      { title: "Additional Training Details", page: 5 },
     ])
     // 标记与小节写在同一行时，页码同样要记下。
     expect(locateReviewAppendixSections([{ page: 8, text: "Appendix A. Motion Dataset Selection" }]))
-      .toEqual([{ title: "A. Motion Dataset Selection", page: 8 }])
+      .toEqual([{ title: "Motion Dataset Selection", page: 8 }])
   })
 
   it("keeps jump targets only for sections that were actually listed", () => {
@@ -240,16 +240,114 @@ describe("review appendix titles", () => {
       { title: "a. details", page: 9, attachmentID: 102 },
       { title: "B. More", page: 0, attachmentID: 101 },
       { title: "B. More", page: 6, attachmentID: 0 },
-    ])).toEqual([{ title: "A. Details", page: 4, attachmentID: 101 }])
+    ])).toEqual([{ title: "Details", page: 4, attachmentID: 101 }])
     expect(mergeReviewAppendixRefs(undefined)).toEqual([])
   })
 
   it("merges duplicate titles across attachments and caps the list", () => {
-    expect(mergeReviewAppendix(["a. details", "A. Details", "not a title", "B. More"])).toEqual(["A. Details", "B. More"])
+    expect(mergeReviewAppendix(["a. details", "A. Details", "not a title", "B. More"])).toEqual(["Details", "More"])
     expect(mergeReviewAppendix(Array.from({ length: 12 }, (_, i) => `${String.fromCharCode(65 + i)}. Part ${i}`))).toHaveLength(MAX_APPENDIX_SECTIONS)
     expect(mergeReviewAppendix(undefined)).toEqual([])
-    expect(prepareQuickReviewPapers([row({ appendix: ["A. Details"] })])[0].appendix).toEqual(["A. Details"])
+    expect(prepareQuickReviewPapers([row({ appendix: ["A. Details"] })])[0].appendix).toEqual(["Details"])
     expect(prepareQuickReviewPapers([row()])[0].appendix).toEqual([])
+  })
+
+  it("keeps only the top-level titles when sub-sections and axis ticks sit between them", () => {
+    // 真实样本（SuperMimic）：参考文献之后直接是 A、B、C 一级标题，中间夹着 A.1 子小节与坐标轴刻度。
+    const pages = [
+      "References",
+      "[1] Some cited paper. 2026.",
+      "A Instantiation: observation, action, reward, and sim context",
+      "A.1 Observation",
+      "The proprioceptive observation o t comprises the joint positions.",
+      "0. 1 2 3 4 5 6 7 8 9 10",
+      "B Joint training across goal interfaces",
+      "C Network architectures",
+    ].join("\n")
+    expect(detectReviewAppendix(pages)).toEqual([
+      "Instantiation: observation, action, reward, and sim context",
+      "Joint training across goal interfaces",
+      "Network architectures",
+    ])
+  })
+
+  it("reads Roman-numeral top-level titles and skips the lettered sub-sections", () => {
+    const pages = [
+      "APPENDIX",
+      "VII. D ATA   C OLLECTION",
+      "A. Training Details",
+      "VIII. A UTOENCODER",
+      "IX. D IFFUSION   T RANSFORMER",
+      "X. E XPERIMENTS",
+    ].join("\n")
+    expect(detectReviewAppendix(pages)).toEqual([
+      "Data collection",
+      "Autoencoder",
+      "Diffusion transformer",
+      "Experiments",
+    ])
+  })
+
+  it("skips reference authors and starts at the first Roman title after the marker", () => {
+    // 真实样本（Neural Weights）：参考文献标题在上、APPENDIX 标记在下，作者行不能当成小节。
+    const pages = [
+      "REFERENCES",
+      "[1] Some cited paper.",
+      "A. Dai, “Some title,” 2024.",
+      "R. Yang, “Another title,” 2025.",
+      "S. Srinivasa, “Third title,” 2026.",
+      "APPENDIX",
+      "VII. D ATA   C OLLECTION",
+      "VIII. A UTOENCODER",
+      "A. Training Details",
+      "IX. D IFFUSION   T RANSFORMER",
+    ].join("\n")
+    expect(detectReviewAppendix(pages)).toEqual([
+      "Data collection",
+      "Autoencoder",
+      "Diffusion transformer",
+    ])
+  })
+
+  it("returns nothing when only the reference list follows the heading", () => {
+    // 真实样本（BeliefOverlap / COLA）：没有附录，参考文献里的 `A. Rioux,` 不能被读成小节。
+    const pages = [
+      "REFERENCES",
+      "[1] S. Zhou, “A paper,” 2024.",
+      "A. Rioux, “Another paper,” 2025.",
+      "B. Foster, “Third paper,” 2026.",
+    ].join("\n")
+    expect(detectReviewAppendix(pages)).toEqual([])
+  })
+
+  it("joins a title that the PDF broke at a hyphen across two lines", () => {
+    // 真实样本（Humanoid-GPT）：编号单独成行，标题在行尾断成 "Reproducibil-" + "ity Details"。
+    const pages = [
+      "References",
+      "[1] Some cited paper. 2026.",
+      "A Summary of Contributions",
+      "B Additional Ablation Studies",
+      "C",
+      "Implementation and Reproducibil-",
+      "ity Details",
+    ].join("\n")
+    expect(detectReviewAppendix(pages)).toEqual([
+      "Summary of Contributions",
+      "Additional Ablation Studies",
+      "Implementation and Reproducibility Details",
+    ])
+  })
+
+  it("does not start the appendix list at a cross-reference or a mid-body letter list", () => {
+    // 正文里提到 "Appendix B."、"A. Introduction" 都不能把后面的正文当成附录一级标题。
+    const pages = [
+      "Intro text that mentions Appendix B. in passing.",
+      "A. Introduction",
+      "We compare against baselines.",
+      "B. Related work",
+      "Prior work is summarised here.",
+    ].join("\n")
+    expect(detectReviewAppendix(pages)).toEqual([])
   })
 })
 
@@ -321,6 +419,7 @@ describe("quick review parsing", () => {
   })
 
   it("keeps idea, experiments, tools and the availability flags", () => {
+    // 开源判定要看证据：报告的仓库链接在本地链接里，才允许保留模型的 yes。
     const result = parseQuickReview(JSON.stringify({
       overview: "总览",
       papers: [{
@@ -328,7 +427,7 @@ describe("quick review parsing", () => {
         code: "yes", data: "公有", resourceNote: "摘要给出仓库链接说明",
       }],
       comparison: [],
-    }), papers)
+    }), [input({ links: ["https://github.com/acme/distill"] })])
     expect(result.papers[0]).toMatchObject({
       idea: "用两阶段蒸馏压缩注意力",
       experiments: "在 4 款边缘设备对比基线与消融",
@@ -337,23 +436,52 @@ describe("quick review parsing", () => {
     })
   })
 
+  it("downgrades code and data claims that only cite project pages or promises", () => {
+    const page = [input({ links: ["https://expressive-humanoid.github.io"] })]
+    const promised = parseQuickReview(JSON.stringify({
+      papers: [{ index: 1, code: "yes", data: "yes", resourceNote: "摘要：代码将在接收后开源" }],
+    }), page)
+    expect(promised.papers[0]).toMatchObject({ code: "unknown", data: "unknown" })
+
+    const stated = parseQuickReview(JSON.stringify({
+      papers: [{ index: 1, code: "yes", data: "yes", resourceNote: "摘要：代码与数据集已公开" }],
+    }), [input()])
+    expect(stated.papers[0]).toMatchObject({ code: "yes", data: "yes" })
+  })
+
   it("reads ratings, normalises the level and refuses unknown indexes", () => {
     const result = parseQuickReview(JSON.stringify({
       overview: "总览", papers: [{ index: 1 }], comparison: [],
       ratings: [
-        { index: 2, value: "可落地", novelty: "常规组合", level: "中", basis: "作者自述指标" },
-        { index: 1, value: "价值高", novelty: "新在编译协同", level: "high", basis: "摘要给出对照" },
-        { index: 9, value: "编造的一篇", novelty: "", level: "low", basis: "" },
-        { index: 1, value: "重复", novelty: "", level: "low", basis: "" },
+        { index: 2, score: 72, value: "可落地", novelty: "常规组合", level: "中", basis: "作者自述指标" },
+        { index: 1, score: 84, value: "价值高", novelty: "新在编译协同", level: "low", basis: "摘要给出对照" },
+        { index: 9, score: 90, value: "编造的一篇", novelty: "", level: "low", basis: "" },
+        { index: 1, score: 10, value: "重复", novelty: "", level: "low", basis: "" },
       ],
       rating_overview: "整体偏工程优化。",
     }), papers, { evaluate: true })
     expect(result.evaluated).toBe(true)
-    expect(result.ratings.map(rating => rating.index)).toEqual([1, 2])
+    expect(result.ratings.map(rating => [rating.index, rating.score])).toEqual([[1, 84], [2, 72]])
+    // 档位由分数折算：84 是高、72 是中；模型自己写的 level 不覆盖分数。
+    expect(result.ratings[0]).toMatchObject({ level: "high", basis: "摘要给出对照" })
     expect(result.ratings[1]).toMatchObject({ level: "medium", basis: "作者自述指标" })
     expect(result.ratingOverview).toBe("整体偏工程优化。")
     // 越界与重复的评价都算跳过，不静默接受。
     expect(result.skipped).toBe(2)
+  })
+
+  it("clamps out-of-range scores and drops scores that are not numbers", () => {
+    const result = parseQuickReview(JSON.stringify({
+      papers: [{ index: 1 }], comparison: [],
+      ratings: [
+        { index: 1, score: 140, value: "", novelty: "", basis: "" },
+        { index: 2, score: "abc", value: "", novelty: "", level: "high", basis: "" },
+      ],
+    }), papers, { evaluate: true })
+    expect(result.ratings.map(rating => [rating.index, rating.score, rating.level])).toEqual([
+      [1, 100, "high"],
+      [2, undefined, "high"],
+    ])
   })
 
   it("warns when ratings were asked for but never returned", () => {
@@ -399,12 +527,13 @@ describe("quick review prompt", () => {
   it("sends appendix titles as local evidence and bounds what they may prove", () => {
     const withAppendix = prepareQuickReviewPapers([row({ links: ["https://expressive-humanoid.github.io"], appendix: ["A. Motion Dataset Selection"] })])
     const prompt = buildQuickReviewPrompt({ collectionName: "Edge AI", papers: withAppendix })
-    expect(prompt).toContain("appendix 是同批页面里识别出的附录小节标题")
+    expect(prompt).toContain("appendix 是客户端从附件里识别出的附录一级标题")
+    expect(prompt).toContain("已去掉字母编号与子小节")
     expect(prompt).toContain("arXiv 等论文落地页已被排除")
     expect(prompt).toContain("appendix 为空只表示未在已读页面里发现附录标记")
     expect(prompt).toContain("不得由标题猜附录里的数值")
     expect(prompt).toContain('"links":["https://expressive-humanoid.github.io"]')
-    expect(prompt).toContain('"appendix":["A. Motion Dataset Selection"]')
+    expect(prompt).toContain('"appendix":["Motion Dataset Selection"]')
     // 附录正文不外发：提示词里只有标题串，没有整段附录文字。
     expect(prompt).not.toContain("We collect 40 hours")
   })
@@ -426,13 +555,15 @@ describe("quick review prompt", () => {
     expect(prompt).not.toContain("再调用一次")
   })
 
-  it("anchors every rating level so the same papers land in the same band", () => {
+  it("anchors every score band so the same papers land in the same band", () => {
     const prompt = buildQuickReviewPrompt({ collectionName: "Edge AI", papers, evaluate: true })
-    expect(prompt).toContain("level 只能取下面锚点里对得上的那一档")
-    // 锚点写死判据，避免模型为拉开差距而随意分档。
-    expect(prompt).toContain("high＝问题或方法设定在该方向上此前少见")
-    expect(prompt).toContain("low＝增量改动（换骨干、调超参、加一个模块）")
-    expect(prompt).toContain("不要为了拉开差距而分档")
+    expect(prompt).toContain("score 是 0–100 的整数内容评分，五个维度各 20 分")
+    expect(prompt).toContain("写作、排版、图表美观、期刊档次、引用量与作者名气一律不计分")
+    // 锚点写死判据，避免模型为拉开差距而随意定分。
+    expect(prompt).toContain("score 锚点（同一批文献用同一把尺子")
+    expect(prompt).toContain("90–100＝该方向此前少见的设定")
+    expect(prompt).toContain("低于 50＝材料不足以支撑结论")
+    expect(prompt).toContain("不得为了让分布好看而刻意拉高或压低")
   })
 
   it("allows model knowledge in ratings but labels where each line came from", () => {
@@ -440,27 +571,26 @@ describe("quick review prompt", () => {
     expect(prompt).toContain("允许结合你自己对该研究方向的了解")
     expect(prompt).toContain("用「摘要：」「链接：」「知识：」标注各句依据")
     expect(prompt).toContain("「AI 推断，需核对」")
-    // 知识可以参与判档，但不能伪造材料里没有的数字。
-    expect(prompt).toContain("不得引用未提供的数值或实验结果来支撑档位")
+    // 知识可以参与定分，但不能伪造材料里没有的数字。
+    expect(prompt).toContain("不得引用未提供的数值或实验结果来支撑分数")
   })
 
   it("keeps the knowledge label from turning into an empty disclaimer", () => {
     const prompt = buildQuickReviewPrompt({ collectionName: "Edge AI", papers, evaluate: true })
-    // 实测出现过「知识：AI 推断，需核对；依据现有材料不足以判断其相对新颖性」这种与档位对不上的空段。
+    // 实测出现过「知识：AI 推断，需核对；依据现有材料不足以判断其相对新颖性」这种与分数对不上的空段。
     expect(prompt).toContain("不要写只有标签、没有内容的「知识：AI 推断，需核对」")
-    expect(prompt).toContain("basis 与 level 必须同调")
-    expect(prompt).toContain("已经给出 high／medium／low 就不得再写")
+    expect(prompt).toContain("score 必须与 value、novelty、basis 的描述同调")
     // 示例 JSON 是模型照抄的形状，占位符本身也会被抓成空段。
     expect(prompt).toContain("摘要：指标仅作者自述；知识：该路线已有多个同类工作（AI 推断，需核对）")
     expect(prompt).not.toContain("basis\": \"摘要：…；知识：…")
   })
 
-  it("forces unclear ratings for papers without a usable abstract", () => {
+  it("forces low scores for papers without a usable abstract", () => {
     const prompt = buildQuickReviewPrompt({ collectionName: "Edge AI", papers: prepareQuickReviewPapers([row({ abstract: "" })]), evaluate: true })
-    expect(prompt).toContain("unclear＝现有材料不足以判断，包括 abstractState 为 missing 或 omitted 的条目")
+    expect(prompt).toContain("abstractState 为 missing 或 omitted 时 score 不得超过 45")
     expect(prompt).toContain("idea、experiments 与 tools 一律留空")
     // 没有摘要时链接仍是开源证据，所以 resourceNote 不在留空之列。
-    expect(prompt).toContain("code 与 data 只在 links 里确有链接时才判 yes")
+    expect(prompt).toContain("code 与 data 只在 links 里确有代码仓库或数据集记录时才判 yes")
   })
 })
 
@@ -488,7 +618,7 @@ describe("quick review rendering", () => {
       overview: "总览段落",
       papers: [{ index: 1, idea: "两阶段蒸馏", experiments: "4 款设备对照", tools: "TensorRT", code: "yes", data: "unknown", resourceNote: "题录链接：github.com/x/y" }],
       comparison: [],
-      ratings: [{ index: 1, value: "可直接用于端侧部署", novelty: "组合已有模块", level: "medium", basis: "摘要：指标仅作者自述；知识：同方向常见做法（AI 推断，需核对）" }],
+      ratings: [{ index: 1, score: 70, value: "可直接用于端侧部署", novelty: "组合已有模块", level: "high", basis: "摘要：指标仅作者自述；知识：同方向常见做法（AI 推断，需核对）" }],
       rating_overview: "整体偏工程优化。",
     }), papers, { evaluate: true })
     const text = formatQuickReview(result, papers, "快速解析 · Edge AI（2 篇）")
@@ -497,7 +627,7 @@ describe("quick review rendering", () => {
     expect(text).toContain("工具：TensorRT")
     // 标注只说材料给没给，不再冒充"摘要"是唯一来源。
     expect(text).toContain("开源代码：明确给出 · 数据集：未见说明（题录链接：github.com/x/y）")
-    expect(text).toContain("评价（中等）：实用价值：可直接用于端侧部署 · 创新性：组合已有模块")
+    expect(text).toContain("内容评分（中等 · 70/100）：实用价值：可直接用于端侧部署 · 创新性：组合已有模块")
     expect(text).toContain("依据：摘要：指标仅作者自述；知识：同方向常见做法（AI 推断，需核对）")
     expect(text).toContain("总体评价")
     expect(text).toContain("逐篇要点")
@@ -510,9 +640,9 @@ describe("quick review rendering", () => {
   })
 
   it("copies the appendix titles found on the local pages", () => {
-    const withAppendix = [input({ appendix: ["A. Motion Dataset Selection", "B. Additional Training Details"] })]
+    const withAppendix = [input({ appendix: ["Motion Dataset Selection", "Additional Training Details"] })]
     const text = formatQuickReview(parseQuickReview(JSON.stringify({ overview: "总览", papers: [{ index: 1 }], comparison: [] }), withAppendix), withAppendix, "快速解析 · Edge AI（1 篇）")
-    expect(text).toContain("附录小节：A. Motion Dataset Selection · B. Additional Training Details")
+    expect(text).toContain("附录存在，包括以下部分：1. Motion Dataset Selection 2. Additional Training Details")
   })
 
   it("renders retained raw text when nothing was structured", () => {    const text = formatQuickReview(parseQuickReview("纯文字回答", papers), papers, "快速解析 · Edge AI（2 篇）")

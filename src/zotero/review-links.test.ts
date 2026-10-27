@@ -107,11 +107,11 @@ describe('attachment link scanning', () => {
     ])
     expect(scanned.rows[0].scanPages).toBe(10)
     // 附录只带出小节标题；正文里那句 40 小时的数据描述不外发。
-    expect(scanned.rows[0].appendix).toEqual(['A. Motion Dataset Selection', 'B. Additional Training Details'])
+    expect(scanned.rows[0].appendix).toEqual(['Motion Dataset Selection', 'Additional Training Details'])
     // 小节页码与附件 ID 一起留下：卡片点标题就能让阅读器翻到那一页，这些只在本机。
     expect(scanned.rows[0].appendixRefs).toEqual([
-      { title: 'A. Motion Dataset Selection', page: 10, attachmentID: 101 },
-      { title: 'B. Additional Training Details', page: 10, attachmentID: 101 },
+      { title: 'Motion Dataset Selection', page: 10, attachmentID: 101 },
+      { title: 'Additional Training Details', page: 10, attachmentID: 101 },
     ])
     expect(scanned.rows[0].attachmentScanned).toBe(true)
     expect(scanned).toMatchObject({ scanned: 1, parsed: 1, found: 1, withAppendix: 1, noAttachment: 0, pages: 10, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false })
@@ -119,7 +119,7 @@ describe('attachment link scanning', () => {
     expect(JSON.stringify(scanned.rows)).not.toContain('40 hours')
     // 扫到了东西也要报数：回执不能只在出问题时才开口。
     expect(quickReviewScanNotice(scanned)).toContain('读了 1 篇 PDF 共 10 页')
-    expect(quickReviewScanNotice(scanned)).toContain('发现 1 条链接、1 篇有附录小节')
+    expect(quickReviewScanNotice(scanned)).toContain('发现 1 条链接、1 篇有附录')
   })
 
   it('picks links out of PDF hyperlink annotations when the text layer has no URL', async () => {
@@ -192,7 +192,7 @@ describe('attachment link scanning', () => {
     expect(report).toMatchObject({ scanned: 1, parsed: 0, found: 0, noAttachment: 1, unavailable: 0, pages: 0 })
     expect(report.rows[0]).toMatchObject({ attachmentScanned: true, scanOutcome: 'noAttachment' })
     expect(quickReviewScanNotice(report)).toContain('1 篇没有可读的 PDF 附件')
-    expect(quickReviewScanNotice(report)).toContain('发现 0 条链接、0 篇有附录小节')
+    expect(quickReviewScanNotice(report)).toContain('发现 0 条链接、0 篇有附录')
   })
 
   it('leaves the rows unscanned when the parser or the file reader is unavailable', async () => {

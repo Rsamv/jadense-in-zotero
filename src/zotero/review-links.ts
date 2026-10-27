@@ -327,7 +327,7 @@ export function quickReviewScanNotice(report: QuickReviewScanReport): string {
   if (report.readerMissing) return uiText('当前 Zotero 版本缺少附件读取能力，本次没有解析 PDF。', 'This Zotero build cannot read attachment files, so no PDF was parsed.')
   if (!report.scanned) return ''
   const parts = [uiText(`附件扫描：读了 ${report.parsed} 篇 PDF 共 ${report.pages} 页`, `Attachment scan: ${report.parsed} PDF(s), ${report.pages} page(s) read`)]
-  parts.push(uiText(`发现 ${report.found} 条链接、${report.withAppendix} 篇有附录小节`, `${report.found} link(s) and appendix titles in ${report.withAppendix} paper(s) found`))
+  parts.push(uiText(`发现 ${report.found} 条链接、${report.withAppendix} 篇有附录`, `${report.found} link(s) and appendix titles in ${report.withAppendix} paper(s) found`))
   // 只认得出附录标记、排不出小节编号的篇目也要说：否则"有附录但没列标题"会被读成"没有附录"。
   if (report.marked > report.withAppendix) parts.push(uiText(`另有 ${report.marked - report.withAppendix} 篇读到附录标记但没排出小节标题`, `${report.marked - report.withAppendix} further paper(s) have an appendix marker without numbered sections`))
   const gaps: string[] = []

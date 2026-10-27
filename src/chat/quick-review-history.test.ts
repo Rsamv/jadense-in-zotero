@@ -114,8 +114,8 @@ const structuredRecord = (): QuickReviewRecord => ({
     comparison: Array.from({ length: 10 }, (_, position) => ({ dimension: `维度${position}`, note: "差异" })),
     trends: "脉络", gaps: "",
     ratings: [
-      { index: 2, value: "可复用", novelty: "增量", level: "medium", basis: "仅摘要证据" },
-      { index: 7, value: "越界", novelty: "", level: "high", basis: "" },
+      { index: 2, score: 55, value: "可复用", novelty: "增量", level: "high", basis: "仅摘要证据" },
+      { index: 7, score: 80, value: "越界", novelty: "", level: "high", basis: "" },
       { index: 1, value: "偏工程", novelty: "", level: "没有这一档", basis: "" },
     ],
     ratingOverview: "整体偏工程实用。",
@@ -136,12 +136,15 @@ describe("quick review history restore", () => {
     expect(restored?.result.papers[0].resourceNote).toBe("摘要称代码随论文发布")
     // 链接与附录标题随记录保存：写入时已剔掉论文落地页和不合标题形状的行。
     expect(restored?.papers[0].links).toEqual(["https://expressive-humanoid.github.io"])
-    expect(restored?.papers[0].appendix).toEqual(["A. Motion Dataset Selection"])
+    expect(restored?.papers[0].appendix).toEqual(["Motion Dataset Selection"])
     // 跳页信息只保留小节列表里确有的标题与合法页码：坏记录不能凭空造出可点小节。
-    expect(restored?.papers[0].appendixRefs).toEqual([{ title: "A. Motion Dataset Selection", page: 7, attachmentID: 101 }])
+    expect(restored?.papers[0].appendixRefs).toEqual([{ title: "Motion Dataset Selection", page: 7, attachmentID: 101 }])
     expect(restored?.papers[1].appendix).toBeUndefined()
     expect(restored?.papers[1].appendixRefs).toBeUndefined()
     expect(restored?.result.ratings.map(rating => rating.index).sort()).toEqual([1, 2])
+    // 分数写入后档位由分数折算；旧记录没有分数时才沿用模型档位。
+    expect(restored?.result.ratings.find(rating => rating.index === 2)).toMatchObject({ score: 55, level: "low" })
+    expect(restored?.result.ratings.find(rating => rating.index === 1)).toMatchObject({ level: "unclear" })
     expect(restored?.result.ratingOverview).toBe("整体偏工程实用。")
     expect(restored?.result.evaluated).toBe(true)
   })
@@ -151,9 +154,9 @@ describe("quick review history restore", () => {
     const saved = appendQuickReviewRecord(prefs, structuredRecord())
     expect(saved.review?.notes.map(note => note.index)).toEqual([1])
     expect(saved.review?.ratings.map(rating => rating.index).sort()).toEqual([1, 2])
-    // 未知档位收紧到 unclear，界面才能沿用同一套配色。
+    // 未知档位收紧到 unclear；带分数的那条由分数折算，界面才能沿用同一套配色。
     expect(saved.review?.ratings.find(rating => rating.index === 1)?.level).toBe("unclear")
-    expect(saved.review?.ratings.find(rating => rating.index === 2)?.level).toBe("medium")
+    expect(saved.review?.ratings.find(rating => rating.index === 2)?.level).toBe("low")
     expect(saved.review?.comparison).toHaveLength(8)
   })
 

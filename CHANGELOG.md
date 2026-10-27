@@ -1,5 +1,16 @@
 # 更新说明 / Changelog
 
+## 0.6.13.11 — 2026-10-27
+
+- 「代码明确给出」有了硬定义：只有摘要或附录里给出仓库网址（github/gitlab/huggingface/zenodo 等，允许不写协议），或明确写了「源代码已开源／已发布／可获取」，才算 `yes`。项目主页、数据集网站、论文落地页，以及「将开源」「审稿后开源」这类承诺都不算。模型若在没有证据时写 `yes`，客户端会降为「未见说明」；代码与数据徽章的悬停提示把这条口径写明。
+- 附录只保留**一级**标题，不再大小标题混排。卡片与复制文本统一成「附录存在，包括以下部分：1. 主要算法代码 2. 模型提示词 3. 数据对比验证」，子小节（`D.1`）、坐标轴刻度与正文句子都不会混进来。
+- 真实 PDF 的四种漏检/误判已修：参考文献里的作者行（`A. Dai,`、`A. Cherubini,`）不再被当成小节；附录标题从 `VII` 这类续编开始时仍能取到（此前必须从 1 起）；编号与标题分行、小型大写被拆成碎片（`VII.` + `D` + `ATA` + `C` + `OLLECTION`）时能拼回；行尾断词（`Reproducibil-` + `ity Details`）能接回。复检 6 篇真实 PDF：SuperMimic 7 节、Neural Weights 7 节、Expressive 3 节、Humanoid-GPT 3 节均正确，BeliefOverlap 与 COLA 没有附录，结果为空。
+- 逐篇评价改成 0–100 的量化分数：问题价值、方法创新、证据强度、可复现性、应用潜力各 20 分，写作、排版、图表、期刊、引用都不计分。档位由分数折算（80+ 高、65–79 中、50–64 低、其余无法判断），同一批文献用同一把尺子；材料只有题录或摘要被截断时分数上限 45。卡片标题旁显示 `72/100`，悬停可看评分口径与依据；历史记录兼容旧档位与新的 `score`。
+- 隐私与计费不变：外发仍只有题录、摘要、链接文本与附录一级标题，PDF 正文一句不出机器；扫描不打开任何链接；一次派发、BYOK 未确认结果不自动重发，错误投影只给错误码／HTTP 状态／类名。
+- "Code stated" now has a hard definition: only a repository URL (github/gitlab/huggingface/zenodo and the like, with or without a scheme) or an explicit "released / open-sourced / available" statement counts as `yes`. Project pages, dataset sites, paper landing pages and promises such as "will be released" or "after acceptance" do not. A `yes` without that evidence is downgraded to "not stated" on the client, and the badge tooltips spell out the rule.
+- Appendixes list top-level titles only, in the form "appendix present, containing: 1. … 2. …"; sub-sections, axis ticks and prose sentences are excluded. Real-PDF fixes: reference authors (`A. Dai,`) are no longer read as sections, numeral continuations such as `VII` are accepted when the appendix does not start at 1, headings split across bare numbers and small-caps fragments are stitched back together, and hyphen-broken titles are rejoined. Re-checked on six real PDFs: SuperMimic 7 sections, Neural Weights 7, Expressive 3, Humanoid-GPT 3, while BeliefOverlap and COLA correctly return none.
+- Per-paper ratings are now a 0–100 score: problem value, methodological novelty, strength of evidence, reproducibility and application potential at 20 points each; writing, layout, figures, venue and citations are not scored. Bands derive from the score (80+ high, 65–79 medium, 50–64 low, otherwise unclear), the same batch uses one ruler, and a metadata-only or truncated-abstract input caps at 45. The card shows `72/100` next to the rating title with the scoring rubric on hover, and history reads both old bands and the new `score`. Privacy and billing are unchanged.
+
 ## 0.6.13.10 — 2026-10-27
 
 - 链接能点了。卡片里的「本地链接」从纯文本改成按钮，点击经 `Zotero.launchURL` 交给系统浏览器。只接受 http/https——历史记录或旧题录里混进的 `javascript:` 之类不会变成可执行动作。插件自身不访问任何地址，只有用户点下去才打开。
