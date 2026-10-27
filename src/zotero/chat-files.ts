@@ -2,29 +2,10 @@
 import { unzipSync } from 'fflate'
 import { MAX_CHAT_FILE_BYTES, MAX_CHAT_FILE_TEXT, normalizeLocalChatFile, type ChatFileInput, type ChatUploadInput, type LocalChatFile } from '@/chat/file-input'
 import { normalizeFigureImage } from './reader-figure-tools'
+import { loadPdfModule, pdfModuleBase } from './pdf-module'
 import { uiText } from './ui-preferences'
 
 const memory = new Map<string, ChatFileInput>()
-type PdfModule = typeof import('pdfjs-dist')
-const pdfModules = new WeakMap<Document, Promise<PdfModule>>()
-/** Reader 代码运行在 bootstrap 沙箱，没有 ScriptLoader；模块必须由真实窗口加载。 */
-function loadPdfModule(doc: Document, base: string): Promise<PdfModule> {
-  const cached = pdfModules.get(doc)
-  if (cached) return cached
-  const loading = new Promise<PdfModule>((resolve, reject) => {
-    const script = doc.createElementNS('http://www.w3.org/1999/xhtml', 'script') as HTMLScriptElement
-    script.type = 'module'; script.src = `${base}loader.mjs`
-    script.onload = () => {
-      script.remove()
-      const module = (doc.defaultView as Window & { __jadenseChatPdfJS?: PdfModule }).__jadenseChatPdfJS
-      if (module) resolve(module); else reject(new Error(uiText('PDF 解析组件未加载，请重试。', 'PDF parser did not load. Try again.')))
-    }
-    script.onerror = () => { script.remove(); reject(new Error(uiText('无法加载本机 PDF 解析组件。', 'Cannot load the local PDF parser.'))) }
-    doc.documentElement.append(script)
-  }).catch(error => { pdfModules.delete(doc); throw error })
-  pdfModules.set(doc, loading)
-  return loading
-}
 type Storage = { IOUtils: { makeDirectory(path: string, options: { ignoreExisting: boolean }): Promise<unknown>; writeUTF8(path: string, text: string): Promise<unknown>; readUTF8(path: string): Promise<string>; getChildren(path: string): Promise<string[]>; remove(path: string): Promise<void> }; PathUtils: { profileDir: string; join(...parts: string[]): string; filename(path: string): string } }
 let cleanup = Promise.resolve()
 function storage() {
@@ -62,7 +43,7 @@ export async function readChatUpload(file: File, doc: Document): Promise<ChatUpl
   let text = '', warning = '', mimeType = file.type || 'text/plain'
   if (extension === 'pdf') {
     mimeType = 'application/pdf'
-    const base = /^https?:$/.test(doc.location.protocol) ? new URL('/pdfjs/', doc.location.href).href : 'chrome://jadense-in-zotero/content/pdfjs/'
+    const base = pdfModuleBase(doc)
     const pdfjs = await loadPdfModule(doc, base)
     pdfjs.GlobalWorkerOptions.workerSrc = `${base}pdf.worker.mjs`
     const task = pdfjs.getDocument({ data: buffer, isEvalSupported: false, useSystemFonts: true, cMapUrl: `${base}cmaps/`, cMapPacked: true, standardFontDataUrl: `${base}standard_fonts/` })

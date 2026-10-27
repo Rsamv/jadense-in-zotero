@@ -8,6 +8,13 @@ jadense-in-zotero-menu-classify =
        *[system] Classify literature…
     }
 
+jadense-in-zotero-menu-review =
+    .label = { $language ->
+        [zh-CN] 快速解析此收藏夹…
+        [en-US] Quick review this collection…
+       *[system] Quick review this collection…
+    }
+
 jadense-in-zotero-menu-open-manager =
     .label = { $language ->
         [zh-CN] 打开攻玉工作台

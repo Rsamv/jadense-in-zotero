@@ -7,7 +7,7 @@ import {
   type MenuCallbacks,
 } from "./native-menus"
 import type { ZoteroLike } from "./runtime"
-import { initializeUiLocale, saveDisplayLanguage } from "./ui-preferences"
+import { getUiLocale, initializeUiLocale, saveDisplayLanguage } from "./ui-preferences"
 
 function callbacks(): MenuCallbacks {
   return {
@@ -44,6 +44,31 @@ describe("native Zotero menus", () => {
     expect(menu.menus?.filter(item => item.menuType !== "separator").every(item => item.l10nArgs === menu.l10nArgs)).toBe(true)
     initializeUiLocale({ locale: "zh-CN" })
   })
+  it('adds the collection quick review command only when the host supplies it', () => {
+    const reviewSelectedCollection = vi.fn(), setEnabled = vi.fn()
+    const collectionTarget = (handlers: MenuCallbacks) => buildJadenseMenuRegistrations('plugin', handlers).find(row => row.target === 'main/library/collection')!
+    expect(collectionTarget(callbacks()).menus[0]?.menus?.map(menu => menu.l10nID)).toEqual([
+      'jadense-in-zotero-menu-open-manager',
+      undefined,
+      'jadense-in-zotero-menu-export-collection',
+    ])
+    const handlers: MenuCallbacks = { ...callbacks(), reviewSelectedCollection, canReviewSelectedCollection: () => false }
+    const items = collectionTarget(handlers).menus[0]?.menus ?? []
+    expect(items.map(menu => menu.l10nID)).toEqual([
+      'jadense-in-zotero-menu-review',
+      undefined,
+      'jadense-in-zotero-menu-open-manager',
+      undefined,
+      'jadense-in-zotero-menu-export-collection',
+    ])
+    expect(items[0]?.l10nArgs).toBe(JSON.stringify({ language: getUiLocale() }))
+    items[0]?.onShowing?.({} as Event, { setEnabled })
+    expect(setEnabled).toHaveBeenCalledWith(false)
+    items[0]?.onCommand?.({} as Event, {})
+    expect(reviewSelectedCollection).toHaveBeenCalledTimes(1)
+    expect(handlers.openManager).not.toHaveBeenCalled()
+  })
+
   it("builds Tools and collection context menu registrations", () => {
     const registrations = buildJadenseMenuRegistrations("plugin@example.com", callbacks())
 

@@ -3,6 +3,7 @@ import { getUiLocale } from "./ui-preferences"
 import { chromeContentUrl } from "./chrome-registration"
 import type {
   ZoteroLike,
+  ZoteroMenuContext,
   ZoteroMenuRegistration,
 } from "./runtime"
 
@@ -18,6 +19,8 @@ export type MenuCallbacks = {
   exportDiagnostics?: () => void
   classifySelectedItems?: () => void
   canClassifySelectedItems?: () => boolean
+  reviewSelectedCollection?: () => void
+  canReviewSelectedCollection?: () => boolean
 }
 
 export function buildJadenseMenuRegistrations(
@@ -100,6 +103,13 @@ export function buildJadenseMenuRegistrations(
           l10nArgs: JSON.stringify({ language: getUiLocale() }),
           l10nID: "jadense-in-zotero-menu-main",
           menus: [
+            ...(callbacks.reviewSelectedCollection ? [{
+              menuType: "menuitem" as const,
+              l10nArgs: JSON.stringify({ language: getUiLocale() }),
+              l10nID: "jadense-in-zotero-menu-review",
+              onCommand: callbacks.reviewSelectedCollection,
+              onShowing: (_event: Event, context: ZoteroMenuContext) => context.setEnabled?.(callbacks.canReviewSelectedCollection?.() ?? true),
+            }, { menuType: "separator" as const }] : []),
             {
               menuType: "menuitem",
               l10nArgs: JSON.stringify({ language: getUiLocale() }),

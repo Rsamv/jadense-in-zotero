@@ -121,6 +121,17 @@ for (const fileName of ['manager.css', 'status.css', 'classification.css', 'clas
   classificationHtml = classificationHtml.replace(`"${fileName}"`, `"${fileName}?v=${sha256(await readFile(path.join(buildDir, 'content', fileName))).slice(0, 12)}"`)
 }
 await writeFile(classificationHtmlPath, classificationHtml)
+await build({
+  entryPoints: [path.join(projectRoot, 'src/zotero/quick-review-page.ts')],
+  outfile: path.join(buildDir, 'content/quick-review.js'),
+  bundle: true, format: 'iife', target: 'firefox140', sourcemap: false, legalComments: 'none',
+})
+const reviewHtmlPath = path.join(buildDir, 'content/quick-review.xhtml')
+let reviewHtml = await readFile(reviewHtmlPath, 'utf8')
+for (const fileName of ['manager.css', 'ui.css', 'quick-review.css', 'quick-review.js']) {
+  reviewHtml = reviewHtml.replace(`"${fileName}"`, `"${fileName}?v=${sha256(await readFile(path.join(buildDir, 'content', fileName))).slice(0, 12)}"`)
+}
+await writeFile(reviewHtmlPath, reviewHtml)
 const managerHtmlPath = path.join(buildDir, "content/manager.xhtml")
 let managerHtml = await readFile(managerHtmlPath, "utf8")
 for (const fileName of ["manager.css", "ui.css", "chat.css", "analysis.css", "classification.css", "settings.css", "manager.js"]) {

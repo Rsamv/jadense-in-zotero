@@ -4,6 +4,8 @@ import { migrateChatDefault0610 } from './zotero/ai-settings'
 import { lifecycleTrace } from './zotero/lifecycle-diagnostics'
 import { selectedClassificationIDs } from './zotero/classification'
 import { openClassificationWindow, closeClassificationWindow } from './zotero/classification-window'
+import { openQuickReviewWindow, closeQuickReviewWindow } from './zotero/quick-review-window'
+import { selectedReviewCollectionIDs } from './zotero/quick-review'
 declare const __JADENSE_BUILD_ID__: string
 import { saveDiagnosticExport } from './zotero/diagnostics-panel'
 import { analysisRuntime, stopAnalysisRuntime } from './zotero/analysis-runtime'
@@ -294,6 +296,10 @@ function registerMenus() {
         openClassificationWindow(Zotero, mainWindow() as ZoteroManagerWindow | null, selectedClassificationIDs(Zotero), () => { openManager('settings-features') })
       },
       canClassifySelectedItems: () => selectedClassificationIDs(Zotero).length > 0,
+      reviewSelectedCollection: () => {
+        openQuickReviewWindow(Zotero, mainWindow() as ZoteroManagerWindow | null, selectedReviewCollectionIDs(Zotero), () => { openManager('settings-features') })
+      },
+      canReviewSelectedCollection: () => selectedReviewCollectionIDs(Zotero).length > 0,
       exportDiagnostics: () => { void exportDiagnostics() },
       exportSelectedItems: () => {
         void runCommand(() => pushSelectedItemsToJadense(Zotero, {
@@ -448,6 +454,7 @@ async function shutdown() {
     ['figures', () => { const remove = unregisterReaderFigureTools; unregisterReaderFigureTools = null; remove?.() }],
     ['reader', () => { const remove = unregisterReaderTools; unregisterReaderTools = null; remove?.() }],
     ['classification', () => closeClassificationWindow(Zotero)],
+    ['quick-review', () => closeQuickReviewWindow(Zotero)],
     ['manager', () => closeManagerWindow(Zotero)], ['menus', unregisterMenus],
     ['preferences', () => { const id = registeredPreferencesPaneID; registeredPreferencesPaneID = null; unregisterPreferencesPane(Zotero, id) }],
     ['panel', () => { const id = registeredSyncPanelID; registeredSyncPanelID = null; unregisterSyncPanel(Zotero, id, pluginContext.pluginID) }],

@@ -154,7 +154,7 @@ function asObject(value: unknown): Record<string, unknown> | null {
 }
 
 /** 允许 JSON 外有围栏或自然语言；字符串内的括号不参与对象边界识别。 */
-function readAnalysisObject(response: string): Record<string, unknown> | null {
+export function readJSONObject(response: string, accept: (value: Record<string, unknown>) => boolean): Record<string, unknown> | null {
   let start = -1
   let depth = 0
   let quoted = false
@@ -177,7 +177,7 @@ function readAnalysisObject(response: string): Record<string, unknown> | null {
     if (depth !== 0) continue
     try {
       const value = asObject(JSON.parse(response.slice(start, index + 1)))
-      if (value && ("summary" in value || "sections" in value || "annotations" in value)) return value
+      if (value && accept(value)) return value
     } catch {
       // 一段自然语言里的花括号不是解析失败，继续寻找后面的完整 JSON。
     }
@@ -186,8 +186,12 @@ function readAnalysisObject(response: string): Record<string, unknown> | null {
   return null
 }
 
+function readAnalysisObject(response: string): Record<string, unknown> | null {
+  return readJSONObject(response, value => "summary" in value || "sections" in value || "annotations" in value)
+}
+
 /** 仅修复不改变文字语义的 JSON 错误：字符串裸控制字符及容器尾逗号。 */
-function repairAnalysisSyntax(response: string): string {
+export function repairJSONSyntax(response: string): string {
   let quoted = false
   let escaped = false
   let repaired = ""
@@ -320,9 +324,8 @@ export function parsePaperAnalysis(response: string, passages: readonly Analysis
   const input = response.slice(0, MAX_RESPONSE_LENGTH)
   let value = readAnalysisObject(input)
   if (!value) {
-    const repaired = repairAnalysisSyntax(input)
-    value = readAnalysisObject(repaired)
-    if (!value) value = readAnalysisObject(repairAnalysisSyntax(closeAnalysisContainers(repaired)))
+    const repaired = repairJSONSyntax(input)
+    value = readAnalysisObject(repaired) ?? readAnalysisObject(repairJSONSyntax(closeAnalysisContainers(repaired)))
     if (value) warnings.add(uiText("已修复 AI 返回的 JSON 格式，批注仍按本地原句校验。", "The AI response format was repaired. Annotations are still validated against local source sentences."))
     else {
       value = recoverAnalysisObject(repaired)

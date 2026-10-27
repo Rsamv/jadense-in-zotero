@@ -1,0 +1,487 @@
+/** 快速解析窗口：收藏夹选择、逐篇勾选、一次派发综述与本机历史；模型文字只用 textContent 呈现。 */
+import { copyTextToClipboard } from './connection-display'
+import { uiText } from './ui-preferences'
+import { createJdxSelect } from './ui/select'
+import type { ZoteroLike } from './runtime'
+import {
+  QUICK_REVIEW_CONFIRM_LIMIT,
+  QUICK_REVIEW_DEFAULT_LIMIT,
+  QUICK_REVIEW_MAX_LIMIT,
+  reviewAvailabilityText,
+  reviewRatingText,
+  type QuickReviewAvailability,
+  type QuickReviewDisplayPaper,
+  type QuickReviewRatingLevel,
+  type QuickReviewResult,
+  type ReviewPaperRow,
+} from '@/chat/quick-review'
+import {
+  clearQuickReviewHistory,
+  quickReviewRecordView,
+  readQuickReviewHistory,
+  removeQuickReviewRecord,
+  type QuickReviewRecord,
+} from '@/chat/quick-review-history'
+import {
+  collectReviewRows,
+  listReviewCollections,
+  newQuickReviewSession,
+  quickReviewModelState,
+  runQuickReview,
+  type QuickReviewError,
+  type QuickReviewRunResult,
+  type QuickReviewSession,
+  type ReviewCollection,
+} from './quick-review'
+import { scanRowsForAttachmentLinks } from './review-links'
+
+const MAX_VISIBLE_ROWS = 200
+const EVALUATE_PREF_KEY = 'extensions.jadenseInZotero.quickReviewEvaluate'
+const SCAN_PREF_KEY = 'extensions.jadenseInZotero.quickReviewScanLinks'
+const rowKey = (row: { libraryID: number; itemKey: string }) => `${row.libraryID}:${row.itemKey}`
+const AVAILABILITY_CLASS: Record<QuickReviewAvailability, string> = {
+  yes: 'jdx-review-flag-yes', no: 'jdx-review-flag-no', unknown: 'jdx-review-flag-unknown',
+}
+const RATING_CLASS: Record<QuickReviewRatingLevel, string> = {
+  high: 'jdx-review-flag-high', medium: 'jdx-review-flag-medium', low: 'jdx-review-flag-low', unclear: 'jdx-review-flag-unclear',
+}
+
+export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: () => void) {
+  const make = <K extends keyof HTMLElementTagNameMap>(tag: K, text = '', className = '') => {
+    const node = doc.createElementNS('http://www.w3.org/1999/xhtml', tag) as HTMLElementTagNameMap[K]
+    node.textContent = text; node.className = className; return node
+  }
+  const button = (text: string, action: () => void, className = '') => {
+    const node = make('button', text, className); node.type = 'button'; node.addEventListener('click', action); return node
+  }
+  const sectionTitle = (text: string) => make('h3', text, 'jdx-review-section-title')
+
+  const dialog = make('main', '', 'jdx-review-dialog'); dialog.id = 'jadense-quick-review-dialog'
+  const heading = make('h2', uiText('收藏夹快速解析', 'Collection quick review')); heading.id = 'jadense-quick-review-title'
+  dialog.setAttribute('aria-labelledby', heading.id)
+  const modelLine = make('p', '', 'jdx-review-model')
+  const body = make('div', '', 'jdx-review-body')
+  const side = make('div', '', 'jdx-review-side')
+  const main = make('div', '', 'jdx-review-main')
+
+  // chrome 文档里原生 select 的弹出层是文档内 XUL menupopup，会透明叠字；两处选择都用自绘列表框。
+  const collectionPick = createJdxSelect(make('div', '', 'jdx-review-pick'), { ariaLabel: uiText('收藏夹', 'Collection'), searchPlaceholder: uiText('搜索收藏夹', 'Search collections') })
+  const scanSummary = make('p', '', 'jdx-review-scan')
+  const listTools = make('div', '', 'jdx-review-tools')
+  const paperList = make('div', '', 'jdx-review-papers')
+  const limitPick = createJdxSelect(make('div', '', 'jdx-review-pick'), { ariaLabel: uiText('一次发送篇数', 'Papers per request'), compact: true })
+  const limitSizes = [...new Set([QUICK_REVIEW_DEFAULT_LIMIT, QUICK_REVIEW_CONFIRM_LIMIT, 20, QUICK_REVIEW_MAX_LIMIT])]
+  limitPick.setOptions(limitSizes.map(size => ({ value: String(size), label: uiText(`前 ${size} 篇`, `First ${size}`) })), String(QUICK_REVIEW_DEFAULT_LIMIT))
+  const evaluatePick = make('input'); evaluatePick.type = 'checkbox'
+  evaluatePick.setAttribute('aria-label', uiText('逐篇评价', 'Rate each paper'))
+  try { evaluatePick.checked = host.Prefs?.get(EVALUATE_PREF_KEY, true) === true } catch { evaluatePick.checked = false }
+  const evaluateRow = make('label', '', 'jdx-review-switch')
+  evaluateRow.append(evaluatePick, make('span', uiText('逐篇评价（实用价值、创新性）', 'Rate each paper (practical value, novelty)')))
+  evaluatePick.addEventListener('change', () => {
+    // 记住勾选只是便利：写偏好失败也照常按当前状态生成。
+    try { host.Prefs?.set(EVALUATE_PREF_KEY, evaluatePick.checked, true) } catch { /* 可选设置。 */ }
+    updateActions()
+  })
+  // 开源链接常在附件首页页脚或文末的 Code/Data availability，题录里没有时要本机扫一遍。
+  const scanPick = make('input'); scanPick.type = 'checkbox'
+  scanPick.setAttribute('aria-label', uiText('扫描附件找开源链接', 'Scan attachments for code links'))
+  try { scanPick.checked = host.Prefs?.get(SCAN_PREF_KEY, true) !== false } catch { scanPick.checked = true }
+  const scanRow = make('label', '', 'jdx-review-switch')
+  scanRow.append(scanPick, make('span', uiText('扫描附件找开源链接（只送出发现的链接文本）', 'Scan attachments for code links (only the links found are sent)')))
+  scanPick.addEventListener('change', () => {
+    try { host.Prefs?.set(SCAN_PREF_KEY, scanPick.checked, true) } catch { /* 可选设置。 */ }
+    updateActions()
+  })
+  const budgetLine = make('p', '', 'jdx-review-scan')
+  const historyList = make('div', '', 'jdx-review-history')
+  const resultBox = make('article', '', 'jdx-review-result')
+  const status = make('p', '', 'jdx-manager-inline-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite')
+  const actions = make('div', '', 'jdx-review-actions')
+
+  let collections: ReviewCollection[] = []
+  let rows: ReviewPaperRow[] = []
+  let scanned = 0, truncated = false, busy = false, generation = 0
+  let view: QuickReviewRunResult | QuickReviewRecord | null = null
+  let session = newQuickReviewSession()
+  let controller: AbortController | undefined
+  const included = new Set<string>()
+
+  const currentCollection = () => collections.find(entry => String(entry.id) === collectionPick.getValue()) ?? null
+  const chosenRows = () => rows.filter(row => included.has(rowKey(row))).slice(0, Number(limitPick.getValue()) || QUICK_REVIEW_DEFAULT_LIMIT)
+  const isRecord = (value: QuickReviewRunResult | QuickReviewRecord): value is QuickReviewRecord => !('result' in value)
+  const copySource = () => (!view ? '' : isRecord(view) ? view.notes : view.text)
+
+  const updateActions = () => {
+    const model = quickReviewModelState(host)
+    modelLine.textContent = model.ready
+      ? uiText(
+        `使用「${model.label}」汇总整个子收藏夹；发送题录与摘要${scanPick.checked ? '，并解析本机附件首尾页以提取开源链接（只送出链接文本，不送正文）' : '，不读取 PDF'}。一次调用可能消耗额度。${evaluatePick.checked ? ' 同一次调用会附带逐篇评价，不额外增加请求次数。' : ''}`,
+        `Summarises the sub-collection with ${model.label}. Bibliographic metadata and abstracts are sent${scanPick.checked ? ', and local attachment first/last pages are parsed for code links (only the link text leaves the machine)' : ', never PDFs'}. One request that may use credits.${evaluatePick.checked ? ' The same request also returns per-paper ratings, without adding a call.' : ''}`,
+      )
+      : `${uiText('模型未配置：', 'Model not configured: ')}${model.issue}`
+    generate.disabled = busy || !model.ready || !chosenRows().length
+    copyButton.hidden = !view
+    stop.hidden = !busy
+    listTools.hidden = !rows.length
+    paperList.hidden = !rows.length
+    limitPick.setDisabled(busy)
+    collectionPick.setDisabled(busy)
+    evaluatePick.disabled = busy
+    scanPick.disabled = busy
+    status.hidden = !status.textContent
+  }
+
+  const renderScan = () => {
+    scanSummary.textContent = rows.length
+      ? uiText(`扫描 ${scanned} 个条目，得到 ${rows.length} 篇可解析文献${truncated ? '（超出扫描上限，已停止）' : ''}。`, `${scanned} entries scanned, ${rows.length} papers reviewable${truncated ? ' (scan limit reached)' : ''}.`)
+      : uiText('这个收藏夹及其子收藏夹里没有可解析的文献条目。', 'This collection and its sub-collections contain no reviewable papers.')
+  }
+  const renderBudget = () => {
+    const picked = rows.filter(row => included.has(rowKey(row))).length
+    const send = chosenRows().length
+    budgetLine.textContent = !picked
+      ? uiText('未勾选任何文献。', 'No papers selected.')
+      : picked > send
+        ? uiText(`已勾选 ${picked} 篇，本次发送前 ${send} 篇；摘要过长时会自动压缩。`, `${picked} checked; the first ${send} are sent. Long abstracts are compressed automatically.`)
+        : uiText(`本次发送 ${send} 篇；摘要过长时会自动压缩。`, `${send} papers will be sent. Long abstracts are compressed automatically.`)
+  }
+
+  const renderRows = () => {
+    paperList.replaceChildren()
+    included.clear()
+    const visible = rows.slice(0, MAX_VISIBLE_ROWS)
+    visible.forEach(row => included.add(rowKey(row)))
+    for (const row of visible) {
+      const label = make('label', '', 'jdx-review-paper-row')
+      const input = make('input'); input.type = 'checkbox'; input.checked = true
+      input.setAttribute('aria-label', row.title)
+      input.addEventListener('change', () => { if (input.checked) included.add(rowKey(row)); else included.delete(rowKey(row)); renderBudget(); updateActions() })
+      const text = make('span', '', 'jdx-review-paper-text')
+      text.append(make('strong', row.title))
+      const meta = [row.creators.map(creator => creator.name).filter(Boolean).join('、'), row.date?.slice(0, 4), row.publicationTitle].filter(Boolean).join(' · ')
+      if (meta) text.append(make('small', meta))
+      if (!String(row.abstract ?? '').trim()) text.append(make('em', uiText('无摘要', 'no abstract'), 'jdx-review-badge'))
+      else if (row.links?.length) text.append(make('em', uiText(`本机发现 ${row.links.length} 条链接`, `${row.links.length} link(s) found locally`), 'jdx-review-badge'))
+      label.append(input, text); paperList.append(label)
+    }
+    if (rows.length > visible.length) paperList.append(make('p', uiText(`收藏夹内还有 ${rows.length - visible.length} 篇未列出；请先在 Zotero 中拆分收藏夹。`, `${rows.length - visible.length} further papers are hidden. Split the collection in Zotero first.`)))
+    renderScan(); renderBudget(); updateActions()
+  }
+
+  const notice = (lines: string[]) => {
+    const block = make('section', '', 'jdx-review-block jdx-review-caution')
+    const list = make('ul')
+    for (const line of lines) list.append(make('li', line))
+    block.append(sectionTitle(uiText('提示', 'Notes')), list)
+    return block
+  }
+  const rawBlock = (text: string) => {
+    const block = make('section', '', 'jdx-review-block')
+    block.append(sectionTitle(uiText('原始返回', 'Raw response')), make('pre', text, 'jdx-review-raw'))
+    return block
+  }
+  const proseBlock = (title: string, value: string) => {
+    if (!value.trim()) return null
+    const block = make('section', '', 'jdx-review-block')
+    block.append(sectionTitle(title), make('p', value))
+    return block
+  }
+
+  const fieldsBlock = (pairs: [string, string][], fallback?: [string, string]) => {
+    const fields = make('dl', '', 'jdx-review-fields')
+    for (const [label, value] of pairs) {
+      if (!value.trim()) continue
+      fields.append(make('dt', label), make('dd', value))
+    }
+    if (fallback) fields.append(make('dt', fallback[0]), make('dd', fallback[1]))
+    return fields
+  }
+  const resourceBadges = (note: QuickReviewResult['papers'][number]) => {
+    const row = make('div', '', 'jdx-review-flags')
+    for (const [kind, value] of [[uiText('代码', 'Code'), note.code], [uiText('数据', 'Data'), note.data]] as const) {
+      row.append(make('span', `${kind}：${reviewAvailabilityText(value)}`, `jdx-review-flag ${AVAILABILITY_CLASS[value]}`))
+    }
+    if (note.resourceNote) row.append(make('span', note.resourceNote, 'jdx-review-flag-note'))
+    return row
+  }
+  /** 链接是本地发现的，原样显示为不可点击文本：窗口不打开任何外部地址。 */
+  const linksRow = (links: string[]) => {
+    const row = make('div', '', 'jdx-review-links')
+    row.append(make('span', uiText('本地链接', 'Local links'), 'jdx-review-links-label'))
+    for (const link of links) row.append(make('code', link, 'jdx-review-link'))
+    return row
+  }
+  const paperCard = (paper: QuickReviewDisplayPaper, note: QuickReviewResult['papers'][number] | undefined) => {
+    const card = make('div', '', 'jdx-review-card')
+    card.append(make('h4', `${paper.index}. ${paper.title}`))
+    const meta = [paper.authors, paper.year, paper.publication].filter(Boolean).join(' · ')
+    if (meta) card.append(make('p', meta, 'jdx-review-card-meta'))
+    if (paper.links?.length) card.append(linksRow(paper.links))
+    if (!note) {
+      card.append(fieldsBlock([], [uiText('状态', 'Status'), uiText('模型未覆盖本篇。', 'The model did not cover this paper.')]))
+      return card
+    }
+    card.append(resourceBadges(note))
+    const pairs: [string, string][] = [
+      [uiText('一句话', 'In brief'), note.hook],
+      [uiText('问题', 'Question'), note.question],
+      [uiText('思路', 'Idea'), note.idea],
+      [uiText('方法', 'Method'), note.method],
+      [uiText('实验流程', 'Experiments'), note.experiments],
+      [uiText('结论', 'Finding'), note.finding],
+      [uiText('局限', 'Limitation'), note.limitation],
+      [uiText('工具', 'Tools'), note.tools],
+    ]
+    if (paper.abstractState !== 'full') pairs.push([uiText('摘要', 'Abstract'), paper.abstractState === 'missing'
+      ? uiText('本地无摘要，结论仅依据题录。', 'No local abstract; conclusions rest on the bibliography only.')
+      : uiText('摘要未完整发送，结论仅限已发送部分。', 'The abstract was not sent in full; findings cover the sent part only.')])
+    card.append(fieldsBlock(pairs))
+    return card
+  }
+  const ratingCard = (rating: QuickReviewResult['ratings'][number] | undefined) => {
+    const card = make('aside', '', 'jdx-review-rating')
+    const title = make('h4', uiText('模型评价', 'Model rating'), 'jdx-review-rating-title')
+    title.append(make('span', rating ? reviewRatingText(rating.level) : uiText('未评价', 'Not rated'), `jdx-review-flag ${RATING_CLASS[rating?.level ?? 'unclear']}`))
+    card.append(title)
+    card.append(fieldsBlock(rating
+      ? [
+        [uiText('实用价值', 'Practical value'), rating.value],
+        [uiText('创新性', 'Novelty'), rating.novelty],
+        [uiText('依据', 'Basis'), rating.basis],
+      ]
+      : [], !rating ? [uiText('状态', 'Status'), uiText('模型未评价本篇。', 'The model did not rate this paper.')] : undefined))
+    return card
+  }
+
+  const paintResult = (result: QuickReviewResult, papers: readonly QuickReviewDisplayPaper[], intro?: string) => {
+    resultBox.replaceChildren()
+    if (intro) resultBox.append(make('p', intro, 'jdx-review-result-note'))
+    if (result.rawText && !result.overview && !result.papers.length) {
+      resultBox.append(rawBlock(result.rawText))
+    } else {
+      const overview = proseBlock(uiText('总览', 'Overview'), result.overview)
+      if (overview) resultBox.append(overview)
+      const rated = result.evaluated && result.ratings.length > 0
+      if (papers.length) {
+        const block = make('section', '', 'jdx-review-block')
+        block.append(sectionTitle(rated
+          ? uiText('逐篇要点与评价', 'Per paper, with ratings')
+          : uiText('逐篇要点', 'Per paper')))
+        const notes = new Map(result.papers.map(note => [note.index, note]))
+        const ratings = new Map(result.ratings.map(rating => [rating.index, rating]))
+        if (rated) {
+          const header = make('div', '', 'jdx-review-pair')
+          header.append(make('p', uiText('综述要点', 'Review notes'), 'jdx-review-pair-head'))
+          header.append(make('p', uiText('模型评价', 'Model rating'), 'jdx-review-pair-head'))
+          block.append(header)
+        }
+        for (const paper of papers) {
+          const card = paperCard(paper, notes.get(paper.index))
+          if (!rated) { block.append(card); continue }
+          // 要点与评价放在同一行：随结果区一起滚动，不需要另做滚动同步。
+          const pair = make('div', '', 'jdx-review-pair'); pair.append(card, ratingCard(ratings.get(paper.index)))
+          block.append(pair)
+        }
+        resultBox.append(block)
+      }
+      if (result.ratingOverview) {
+        const ratingOverview = proseBlock(uiText('总体评价', 'Overall rating'), result.ratingOverview)
+        if (ratingOverview) resultBox.append(ratingOverview)
+      }
+      if (result.comparison.length) {
+        const block = make('section', '', 'jdx-review-block')
+        const table = make('table')
+        const head = make('tr')
+        for (const label of [uiText('维度', 'Dimension'), uiText('差异', 'Difference')]) { const cell = make('th', label); cell.scope = 'col'; head.append(cell) }
+        const thead = make('thead'); thead.append(head)
+        const tbody = make('tbody')
+        for (const entry of result.comparison) {
+          const tr = make('tr'); tr.append(make('td', entry.dimension), make('td', entry.note)); tbody.append(tr)
+        }
+        table.append(thead, tbody)
+        const scroll = make('div', '', 'jdx-review-table-scroll'); scroll.append(table)
+        block.append(sectionTitle(uiText('横向对比', 'Comparison')), scroll)
+        resultBox.append(block)
+      }
+      const trends = proseBlock(uiText('趋势与脉络', 'Trends'), result.trends)
+      const gaps = proseBlock(uiText('空白与值得跟进', 'Gaps'), result.gaps)
+      if (trends) resultBox.append(trends)
+      if (gaps) resultBox.append(gaps)
+    }
+    if (result.warnings.length) resultBox.append(notice(result.warnings))
+    resultBox.scrollTop = 0
+  }
+
+  const showRecord = (record: QuickReviewRecord) => {
+    const restored = quickReviewRecordView(record)
+    const intro = `${uiText('历史 · ', 'History · ')}${record.collection.name} · ${new Date(record.createdAt).toLocaleString()} · ${record.model}`
+    if (restored) { paintResult(restored.result, restored.papers, intro); return }
+    // 0.6.13.3 之前的记录只存了整段文字，没有结构化正文，原样显示。
+    resultBox.replaceChildren()
+    const block = make('section', '', 'jdx-review-block')
+    block.append(sectionTitle(intro), make('pre', record.notes, 'jdx-review-raw'))
+    resultBox.append(block)
+    if (record.warnings?.length) resultBox.append(notice(record.warnings))
+    resultBox.scrollTop = 0
+  }
+
+  const renderHistory = () => {
+    historyList.replaceChildren()
+    const records = host.Prefs ? readQuickReviewHistory(host.Prefs).records : []
+    if (!records.length) { historyList.append(make('p', uiText('暂无历史。', 'No saved reviews yet.'))); return }
+    for (const record of records) {
+      const line = make('div', '', 'jdx-review-history-row')
+      line.append(button(record.collection.name, () => { view = record; renderHistory(); showRecord(record) }))
+      line.append(make('span', `${new Date(record.createdAt).toLocaleString()} · ${record.papers.length} ${uiText('篇', 'papers')} · ${record.model}`, 'jdx-review-history-meta'))
+      line.append(button(uiText('删除', 'Remove'), () => {
+        if (host.Prefs) removeQuickReviewRecord(host.Prefs, record.id)
+        if (view === record) view = null
+        renderHistory(); updateActions()
+      }))
+      historyList.append(line)
+    }
+  }
+
+  const confirmDialog = make('dialog', '', 'jdx-review-confirm')
+  const confirmTitle = make('h3'); confirmTitle.id = 'jadense-review-confirm-title'; confirmDialog.setAttribute('aria-labelledby', confirmTitle.id)
+  const confirmBody = make('p')
+  const confirmActions = make('div', '', 'jdx-review-actions')
+  let confirmed = false
+  let pendingResolve: ((value: boolean) => void) | undefined
+  const ask = (title: string, message: string, yes: string) => new Promise<boolean>(resolve => {
+    confirmTitle.textContent = title; confirmBody.textContent = message
+    confirmActions.replaceChildren(button(uiText('取消', 'Cancel'), () => confirmDialog.close()), button(yes, () => { confirmed = true; confirmDialog.close() }, 'jdx-manager-primary'))
+    confirmed = false; pendingResolve = resolve; confirmDialog.showModal()
+  })
+  confirmDialog.addEventListener('close', () => { const resolve = pendingResolve; pendingResolve = undefined; resolve?.(confirmed) })
+  confirmDialog.append(confirmTitle, confirmBody, confirmActions)
+
+  const loadCollection = async (id: number) => {
+    const token = ++generation
+    status.textContent = uiText('正在读取收藏夹…', 'Reading the collection…')
+    try {
+      const collected = await collectReviewRows(host, id)
+      const entries = await listReviewCollections(host, collected.collection?.libraryID ?? 0)
+      if (token !== generation) return
+      collections = entries
+      collectionPick.setOptions(collections.map(entry => ({ value: String(entry.id), label: entry.path.join(' ▸ ') })), String(id))
+      rows = collected.rows; scanned = collected.scanned; truncated = collected.truncated
+      view = null
+      resultBox.replaceChildren(make('p', uiText('尚未生成综述。选择收藏夹后点击「生成综述」，一次调用汇总整个子分类。', 'No review yet. Pick a collection and generate one summary for the whole sub-collection.')))
+      status.textContent = ''
+      renderRows(); renderHistory()
+    } catch { if (token === generation) status.textContent = uiText('无法读取收藏夹，请重新打开窗口。', 'Could not read the collection. Reopen this window.') }
+  }
+
+  const dispatch = async (collection: ReviewCollection, papers: ReviewPaperRow[], localSession: QuickReviewSession, allowUnconfirmedRetry: boolean, evaluate: boolean) => {
+    controller = new AbortController()
+    busy = true; updateActions()
+    let reviewed = papers
+    try {
+      // 扫描每批只做一次：授权重发沿用同一批已带链接的行，既不重复读盘也不重复计费。
+      if (scanPick.checked && papers.some(row => !row.attachmentScanned)) {
+        reviewed = (await scanRowsForAttachmentLinks({ doc, host, rows: papers, signal: controller.signal, onProgress: message => { status.textContent = message } })).rows
+        // 发现的链接按行合并回列表：再点一次「生成综述」不必重读附件。
+        // 这里不重画清单——renderRows 会把可见行全部勾上，用户在计费前取消的勾选不能被抹掉。
+        if (reviewed !== papers) {
+          const scanned = new Map(reviewed.map(row => [rowKey(row), row]))
+          rows = rows.map(row => scanned.get(rowKey(row)) ?? row)
+        }
+      }
+      const outcome = await runQuickReview({ zotero: host, collection, rows: reviewed, session: localSession, signal: controller.signal, ...(allowUnconfirmedRetry ? { allowUnconfirmedRetry: true } : {}), ...(evaluate ? { evaluate: true } : {}), onProgress: message => { status.textContent = message } })
+      view = outcome
+      paintResult(outcome.result, outcome.papers)
+      status.textContent = outcome.historySaved
+        ? uiText('综述已完成并写入本机历史。', 'Review finished and saved in local history.')
+        : outcome.historyError ?? ''
+      renderHistory()
+      return outcome
+    } catch (error) {
+      const caught = error as QuickReviewError
+      if (caught.code === 'AI_NOT_CONFIGURED') status.textContent = caught.message
+      else if (caught.unconfirmed) {
+        // 未确认执行不得自动重发：沿用同一会话，只有用户核对提供商后显式授权才顶掉未确认记录。
+        status.textContent = caught.message
+        const retry = await ask(uiText('上次执行结果未确认', 'The previous execution is unconfirmed'),
+          uiText('插件不会自动重发，以免重复计费。请先在提供商后台核对这次请求；确认未计费后再授权重发。', 'Nothing is resent automatically, to avoid duplicate charges. Check this request with your provider, then authorise a resend only if it was not billed.'),
+          uiText('已核对，授权重发', 'Checked, resend'))
+        if (retry) {
+          status.textContent = uiText('正在按授权重发…', 'Resending as authorised…')
+          return dispatch(collection, reviewed, localSession, true, evaluate)
+        }
+      } else status.textContent = caught.message
+      return null
+    } finally {
+      busy = false; controller = undefined; updateActions()
+    }
+  }
+
+  const generate = button(uiText('生成综述', 'Generate review'), () => { void (async () => {
+    const collection = currentCollection()
+    const papers = chosenRows()
+    if (!collection || busy || !papers.length) return
+    // 派发时锁定勾选状态：中途改勾选不会改变已经在跑的这次请求。
+    const evaluate = evaluatePick.checked
+    if (papers.length > QUICK_REVIEW_CONFIRM_LIMIT) {
+      const go = await ask(uiText(`确认发送 ${papers.length} 篇摘要？`, `Send ${papers.length} abstracts?`),
+        uiText(`一次发送越多，摘要预算越紧，费用与耗时也越高；默认只解析 ${QUICK_REVIEW_DEFAULT_LIMIT} 篇。`, `More papers per request means a tighter abstract budget and higher cost and latency. The default is ${QUICK_REVIEW_DEFAULT_LIMIT} papers.`),
+        uiText('确认发送', 'Send them'))
+      if (!go) return
+    }
+    const localSession = session
+    session = newQuickReviewSession()
+    await dispatch(collection, papers, localSession, false, evaluate)
+  })() }, 'jdx-manager-primary')
+  const stop = button(uiText('停止', 'Stop'), () => controller?.abort()); stop.hidden = true
+  const copyButton = button(uiText('复制全文', 'Copy full text'), () => { void (async () => {
+    const text = copySource()
+    if (!text) return
+    status.textContent = await copyTextToClipboard(host, text) ? uiText('已复制全文。', 'Full text copied.') : uiText('复制失败，请检查剪贴板权限。', 'Copy failed. Check clipboard permission.')
+  })() })
+  copyButton.hidden = true
+  const settings = button(uiText('配置模型', 'Configure model'), () => openSettings())
+  const clearHistory = button(uiText('清空历史', 'Clear history'), () => {
+    if (host.Prefs) clearQuickReviewHistory(host.Prefs)
+    if (view && isRecord(view)) view = null
+    renderHistory(); updateActions()
+  })
+
+  actions.append(generate, stop, copyButton, settings, clearHistory)
+
+  const picker = make('section', '', 'jdx-review-picker')
+  picker.append(sectionTitle(uiText('收藏夹（含子收藏夹）', 'Collection with sub-collections')), collectionPick.element, scanSummary)
+  const listSection = make('section', '', 'jdx-review-list')
+  listTools.append(
+    button(uiText('全选', 'Select all'), () => { for (const row of rows.slice(0, MAX_VISIBLE_ROWS)) included.add(rowKey(row)); renderRows() }),
+    button(uiText('全不选', 'Clear selection'), () => { rows.slice(0, MAX_VISIBLE_ROWS).forEach(row => included.delete(rowKey(row))); renderBudget(); updateActions() }),
+  )
+  const limitRow = make('div', '', 'jdx-review-limit-row')
+  const limitLabel = make('span', uiText('一次发送', 'Papers per request'), 'jdx-review-limit-label')
+  limitRow.append(limitLabel, limitPick.element)
+  listSection.append(sectionTitle(uiText('参与解析的文献', 'Papers in this review')), listTools, paperList, limitRow, evaluateRow, scanRow, budgetLine)
+  const historySection = make('section', '', 'jdx-review-block')
+  historySection.append(sectionTitle(uiText('本机历史', 'Local history')), historyList)
+
+  side.append(picker, listSection, historySection)
+  main.append(sectionTitle(uiText('综述结果', 'Review result')), resultBox)
+  body.append(side, main)
+  dialog.append(heading, modelLine, body, status, actions, confirmDialog)
+  doc.body.append(dialog)
+
+  collectionPick.onChange(value => { const id = Number(value); if (id) void loadCollection(id) })
+  limitPick.onChange(() => { renderBudget(); updateActions() })
+  // 自绘列表框展开时 Escape 只该收起弹层；组件不拦截冒泡，这里挡住关窗逻辑。
+  const pickerOpen = () => [collectionPick, limitPick].some(select => select.element.dataset.open === 'true')
+  doc.addEventListener('keydown', event => { if (event.key === 'Escape' && !confirmDialog.open && !pickerOpen()) { controller?.abort(); doc.defaultView?.close() } })
+  updateActions(); renderHistory()
+
+  return {
+    async open(collectionIDs: number[]) {
+      const first = collectionIDs.find(id => Number.isInteger(id) && id > 0)
+      if (!first) { status.textContent = uiText('请先在 Zotero 中右键一个收藏夹。', 'Right-click a collection in Zotero first.'); updateActions(); return }
+      session = newQuickReviewSession()
+      await loadCollection(first)
+    },
+    dispose() { generation++; controller?.abort(); collectionPick.destroy(); limitPick.destroy(); dialog.remove() },
+  }
+}

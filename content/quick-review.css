@@ -1,0 +1,97 @@
+/* 快速解析复用工作台主题；左右两栏各自滚动，窗口壳与底部操作区固定。 */
+.jdx-review-window, .jdx-review-window body { min-width: 0; min-height: 0; height: 100%; margin: 0; overflow: hidden; }
+.jdx-review-dialog {
+  box-sizing: border-box; height: 100dvh; width: 100%; margin: 0; padding: 18px 20px;
+  display: flex; flex-direction: column; gap: 10px; overflow: hidden;
+  background: var(--jdx-surface, #fff); color: var(--jdx-text, #17211b); font: inherit;
+}
+.jdx-review-dialog h2 { margin: 0; font-size: 20px; }
+.jdx-review-dialog [hidden] { display: none !important; }
+.jdx-review-model { margin: 0; line-height: 1.5; opacity: .8; }
+.jdx-review-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(320px, 34%) minmax(0, 1fr); gap: 18px; }
+.jdx-review-side, .jdx-review-main { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.jdx-review-side { gap: 14px; overflow: auto; padding-right: 4px; }
+.jdx-review-section-title { margin: 0 0 8px; font-size: 14px; }
+.jdx-review-list, .jdx-review-picker, .jdx-review-block { display: flex; flex-direction: column; }
+/* 收藏夹与篇数用自绘列表框：弹出层是页面内的不透明元素，绕开 chrome 原生 menupopup 的透明叠字。 */
+.jdx-review-pick { max-width: 100%; }
+.jdx-review-limit-row .jdx-review-pick { flex: 0 0 auto; width: 132px; }
+.jdx-review-dialog button:focus-visible, .jdx-review-dialog input:focus-visible { outline: 2px solid var(--jdx-green); outline-offset: 2px; }
+
+.jdx-review-scan { margin: 8px 0 0; font-size: 12px; line-height: 1.5; opacity: .75; }
+.jdx-review-tools { display: flex; gap: 8px; margin-bottom: 8px; }
+.jdx-review-tools button, .jdx-review-actions button, .jdx-review-history-row button {
+  border: 1px solid var(--jdx-line-strong); border-radius: 6px; padding: 6px 11px;
+  background: var(--jdx-surface); color: var(--jdx-text); cursor: pointer;
+}
+.jdx-review-actions button.jdx-manager-primary { background: var(--jdx-green); border-color: var(--jdx-green); color: #07351f; font-weight: 600; }
+.jdx-review-tools button:disabled, .jdx-review-actions button:disabled { opacity: .5; cursor: default; }
+.jdx-review-papers { max-height: 40vh; overflow: auto; border: 1px solid var(--jdx-line-strong); border-radius: 8px; background: var(--jdx-sidebar); padding: 6px; }
+.jdx-review-papers > label { display: flex; gap: 9px; align-items: flex-start; padding: 6px 5px; cursor: pointer; }
+.jdx-review-papers > label:hover { background: rgb(0 0 0 / 4%); }
+.jdx-review-papers input[type="checkbox"] { accent-color: var(--jdx-green); margin-top: 3px; }
+.jdx-review-paper-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.jdx-review-paper-text strong { font-weight: 600; }
+.jdx-review-paper-text small { opacity: .7; font-size: 12px; }
+.jdx-review-badge { font-style: normal; font-size: 11px; color: var(--jdx-green-deep); }
+.jdx-review-limit-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.jdx-review-limit-label { font-size: 13px; }
+.jdx-review-switch { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; cursor: pointer; }
+.jdx-review-switch input { accent-color: var(--jdx-green); }
+/* 标题占满剩余宽度，时间与删除键固定在右侧同一基线，不再随宽度换行错位。 */
+.jdx-review-history-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 4px 0; }
+.jdx-review-history-row button:first-child { text-align: left; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jdx-review-history-meta { font-size: 12px; opacity: .7; white-space: nowrap; }
+.jdx-review-result { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--jdx-line-strong); border-radius: 10px; padding: 14px; background: var(--jdx-surface); font-size: calc(14px * var(--jdx-font-scale, 1)); }
+.jdx-review-result > .jdx-review-section-title { font-size: 15px; }
+.jdx-review-result-note { margin: 0 0 12px; font-size: 12px; opacity: .7; }
+.jdx-review-block { margin: 0 0 18px; }
+.jdx-review-block p, .jdx-review-card p, .jdx-review-rating p { margin: 0 0 8px; line-height: 1.65; }
+.jdx-review-block > ul { margin: 0; padding-left: 20px; line-height: 1.6; }
+.jdx-review-caution { border-left: 3px solid var(--jdx-line-strong); padding-left: 12px; opacity: .85; }
+.jdx-review-card { border: 1px solid var(--jdx-line-strong); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: var(--jdx-sidebar); }
+.jdx-review-card h4, .jdx-review-rating h4 { margin: 0 0 4px; font-size: 14px; overflow-wrap: anywhere; }
+.jdx-review-card-meta { font-size: 12px; opacity: .75; }
+.jdx-review-fields { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 3px 10px; margin: 6px 0 0; }
+.jdx-review-fields dt { font-size: 12px; opacity: .7; }
+.jdx-review-fields dd { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+/* 要点与评价同行两列：同一滚动容器里一起移动，不需要额外的滚动同步。 */
+.jdx-review-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 36%); gap: 10px; align-items: start; margin-bottom: 12px; }
+.jdx-review-pair > .jdx-review-card { margin-bottom: 0; }
+.jdx-review-pair-head { margin: 0; font-size: 12px; opacity: .65; letter-spacing: 0; }
+.jdx-review-rating { border: 1px solid var(--jdx-line-strong); border-left: 3px solid var(--jdx-green); border-radius: 8px; padding: 10px 12px; background: var(--jdx-surface); }
+.jdx-review-rating h4 { display: flex; align-items: center; gap: 8px; }
+.jdx-review-flags { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px; }
+.jdx-review-flag { font-size: 11px; line-height: 1.5; padding: 1px 8px; border-radius: 999px; border: 1px solid; }
+.jdx-review-flag-yes, .jdx-review-flag-high { color: #0c7042; border-color: rgb(12 112 66 / 45%); background: rgb(12 112 66 / 12%); }
+.jdx-review-flag-no, .jdx-review-flag-medium { color: #96590b; border-color: rgb(150 89 11 / 45%); background: rgb(150 89 11 / 12%); }
+.jdx-review-flag-low { color: #a2312a; border-color: rgb(162 49 42 / 45%); background: rgb(162 49 42 / 12%); }
+.jdx-review-flag-unknown, .jdx-review-flag-unclear { color: var(--jdx-muted, #66766d); border-color: rgb(102 118 109 / 45%); background: rgb(102 118 109 / 12%); }
+.jdx-review-flag-note { font-size: 12px; opacity: .75; line-height: 1.5; flex-basis: 100%; }
+/* 本地发现的链接：等宽、可整段选中，但不做成可点击的链接。 */
+.jdx-review-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; }
+.jdx-review-links-label { font-size: 11px; color: var(--jdx-muted, #66766d); }
+.jdx-review-link { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; line-height: 1.5; padding: 1px 6px; border: 1px solid var(--jdx-line-strong); border-radius: 6px; background: var(--jdx-sidebar); overflow-wrap: anywhere; user-select: text; }
+.jdx-review-table-scroll { overflow-x: auto; border: 1px solid var(--jdx-line-strong); border-radius: 8px; }
+.jdx-review-result table { width: 100%; border-collapse: collapse; text-align: left; min-width: 420px; }
+.jdx-review-result th { position: sticky; top: 0; background: var(--jdx-sidebar); white-space: nowrap; }
+.jdx-review-result th, .jdx-review-result td { padding: 9px 10px; border-bottom: 1px solid var(--jdx-line-strong); vertical-align: top; line-height: 1.6; }
+.jdx-review-result td:first-child { width: 22%; overflow-wrap: anywhere; }
+.jdx-review-raw { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.65; }
+.jdx-review-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding-top: 12px; border-top: 1px solid var(--jdx-line-strong); }
+.jdx-review-actions:empty { display: none; }
+.jdx-review-confirm { max-width: min(460px, calc(100vw - 48px)); padding: 22px; border: 1px solid var(--jdx-line-strong); border-radius: 12px; background: var(--jdx-surface); color: var(--jdx-text); }
+.jdx-review-confirm::backdrop { background: rgb(0 0 0 / 25%); }
+.jdx-review-confirm h3 { margin: 0 0 10px; font-size: 16px; }
+.jdx-review-confirm p { margin: 0; line-height: 1.6; }
+.jdx-review-confirm .jdx-review-actions { justify-content: flex-end; margin-top: 16px; border-top: 0; padding-top: 0; }
+/* 窗口被拉窄时先让评价落到要点下方，再把左右两栏叠成一栏，保持可读行宽。 */
+@media (max-width: 1180px) {
+  .jdx-review-pair { grid-template-columns: minmax(0, 1fr); }
+  .jdx-review-pair > .jdx-review-card { margin-bottom: 10px; }
+}
+@media (max-width: 860px) {
+  .jdx-review-body { grid-template-columns: 1fr; overflow: auto; }
+  .jdx-review-papers { max-height: 30vh; }
+}
+
