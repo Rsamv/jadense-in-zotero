@@ -3,8 +3,9 @@ import { uiText } from "@/zotero/ui-preferences"
  * 收藏夹快速解析的本机历史。
  * 与单篇解析历史分开保存：记录归属收藏夹而非某个附件，且只缓存可读文字，不承载任何库内写入输入。
  */
-import type { QuickReviewAvailability, QuickReviewDisplayPaper, QuickReviewPaperNote, QuickReviewPaperRating, QuickReviewRatingLevel, QuickReviewResult, QuickReviewScanOutcome, ReviewAppendixRef } from "./quick-review"
-import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, mergeReviewAppendix, mergeReviewAppendixRefs, normalizeReviewLinks, ratingLevelForScore } from "./quick-review"
+import type { QuickReviewAvailability, QuickReviewDisplayPaper, QuickReviewPaperNote, QuickReviewPaperRating, QuickReviewRatingLevel, QuickReviewResult, QuickReviewScanOutcome, ReviewAppendixRef, ReviewStructure } from "./quick-review"
+import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, mergeReviewAppendix, mergeReviewAppendixRefs, normalizeReviewLinks, normalizeReviewStructure, ratingLevelForScore } from "./quick-review"
+import { normalizeDeepRead, type StoredDeepRead } from "./review-deep-read"
 
 export const QUICK_REVIEW_HISTORY_PREF_KEY = "extensions.jadenseInZotero.quickReviewHistory"
 
@@ -39,6 +40,12 @@ export type QuickReviewRecordPaper = {
   scanPages?: number
   /** 0.6.13.9 起保存扫描结论：历史里也要分清"没有 PDF"与"没读到附件"。 */
   scanOutcome?: QuickReviewScanOutcome
+  /** 0.6.13.11 起保存本机版面统计：历史点开时结构行与当时一致。 */
+  structure?: ReviewStructure
+  /**
+   * 0.6.13.12 起保存单篇深读结果：深读发生在综述落库之后，因此单独写回这一篇，不重存整条记录。
+   */
+  deepRead?: StoredDeepRead
 }
 
 /** 结构化正文：历史点开时能复原逐篇卡片，而不只有一段纯文本。 */
@@ -132,6 +139,8 @@ function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
     ? mergeReviewAppendix(row.appendix.filter((line): line is string => typeof line === "string"))
     : []
   const appendixRefs = normalizeAppendixRefs(row?.appendixRefs, appendix)
+  const structure = normalizeReviewStructure(row?.structure)
+  const deepRead = normalizeDeepRead(row?.deepRead)
   return {
     libraryID,
     itemKey,
@@ -148,6 +157,8 @@ function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
     ...(typeof row?.attachmentScanned === "boolean" ? { attachmentScanned: row.attachmentScanned } : {}),
     ...(typeof row?.scanPages === "number" && Number.isFinite(row.scanPages) && row.scanPages >= 0 ? { scanPages: Math.round(row.scanPages) } : {}),
     ...(SCAN_OUTCOMES.includes(row?.scanOutcome as QuickReviewScanOutcome) ? { scanOutcome: row!.scanOutcome as QuickReviewScanOutcome } : {}),
+    ...(structure ? { structure } : {}),
+    ...(deepRead ? { deepRead } : {}),
   }
 }
 
@@ -242,26 +253,35 @@ function normalizeRecord(value: unknown): QuickReviewRecord | null {
 }
 
 /** 历史记录还原成与实时结果同构的数据，供界面复用逐篇卡片渲染；旧记录没有结构化字段时返回 null。 */
-export function quickReviewRecordView(record: QuickReviewRecord): { result: QuickReviewResult; papers: QuickReviewDisplayPaper[] } | null {
+export function quickReviewRecordView(record: QuickReviewRecord): { result: QuickReviewResult; papers: QuickReviewDisplayPaper[]; deepReads: Map<number, StoredDeepRead> } | null {
   const structure = record.review
   if (!structure) return null
-  const papers = record.papers.map((paper, position) => ({
-    index: paper.index ?? position + 1,
-    title: paper.title,
-    authors: paper.authors,
-    year: paper.year,
-    publication: paper.publication,
-    abstractState: paper.abstractState ?? "full",
-    ...(paper.links?.length ? { links: paper.links } : {}),
-    ...(paper.appendix?.length ? { appendix: paper.appendix } : {}),
-    ...(paper.appendixRefs?.length ? { appendixRefs: paper.appendixRefs } : {}),
-    ...(paper.appendixMarked === true ? { appendixMarked: true } : {}),
-    ...(typeof paper.attachmentScanned === "boolean" ? { attachmentScanned: paper.attachmentScanned } : {}),
-    ...(typeof paper.scanPages === "number" ? { scanPages: paper.scanPages } : {}),
-    ...(SCAN_OUTCOMES.includes(paper.scanOutcome as QuickReviewScanOutcome) ? { scanOutcome: paper.scanOutcome } : {}),
-  }))
+  const deepReads = new Map<number, StoredDeepRead>()
+  const papers = record.papers.map((paper, position) => {
+    const index = paper.index ?? position + 1
+    if (paper.deepRead) deepReads.set(index, paper.deepRead)
+    return {
+      index,
+      title: paper.title,
+      authors: paper.authors,
+      year: paper.year,
+      publication: paper.publication,
+      abstractState: paper.abstractState ?? "full",
+      libraryID: paper.libraryID,
+      itemKey: paper.itemKey,
+      ...(paper.links?.length ? { links: paper.links } : {}),
+      ...(paper.appendix?.length ? { appendix: paper.appendix } : {}),
+      ...(paper.appendixRefs?.length ? { appendixRefs: paper.appendixRefs } : {}),
+      ...(paper.appendixMarked === true ? { appendixMarked: true } : {}),
+      ...(typeof paper.attachmentScanned === "boolean" ? { attachmentScanned: paper.attachmentScanned } : {}),
+      ...(typeof paper.scanPages === "number" ? { scanPages: paper.scanPages } : {}),
+      ...(SCAN_OUTCOMES.includes(paper.scanOutcome as QuickReviewScanOutcome) ? { scanOutcome: paper.scanOutcome } : {}),
+      ...(paper.structure ? { structure: paper.structure } : {}),
+    }
+  })
   return {
     papers,
+    deepReads,
     result: {
       overview: record.overview,
       papers: structure.notes.filter(note => papers.some(paper => paper.index === note.index)),
@@ -309,6 +329,24 @@ export function appendQuickReviewRecord(preferences: QuickReviewPreferenceStore,
   if (!record) throw new Error(uiText("快速解析记录缺少有效的收藏夹、文献或内容。", "The quick review record is missing a valid collection, paper list, or content."))
   preferences.set(QUICK_REVIEW_HISTORY_PREF_KEY, JSON.stringify(fitHistory([record, ...readQuickReviewHistory(preferences).records])))
   return record
+}
+
+/**
+ * 深读结果写回已存在的那条记录：综述落库在前，深读发生在后，
+ * 因此按记录 ID 与序号定位到具体一篇再改，不重排也不新增记录。
+ * 记录或那一篇已经不在了（被清空、被挤出上限）就返回 false，界面据此只提示没保存。
+ */
+export function saveQuickReviewDeepRead(preferences: QuickReviewPreferenceStore, recordID: string, index: number, deepRead: StoredDeepRead): boolean {
+  const stored = normalizeDeepRead(deepRead)
+  if (!stored) return false
+  const records = readQuickReviewHistory(preferences).records
+  const record = records.find(entry => entry.id === recordID)
+  if (!record) return false
+  const paper = record.papers.find((entry, position) => (entry.index ?? position + 1) === index)
+  if (!paper) return false
+  paper.deepRead = stored
+  preferences.set(QUICK_REVIEW_HISTORY_PREF_KEY, JSON.stringify(fitHistory(records)))
+  return true
 }
 
 export function removeQuickReviewRecord(preferences: QuickReviewPreferenceStore, id: string): boolean {

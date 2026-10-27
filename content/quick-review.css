@@ -86,6 +86,19 @@ button.jdx-review-link:hover, button.jdx-review-jump:hover { border-color: var(-
 .jdx-review-jump-page { margin-left: 5px; font-size: 10px; opacity: .7; }
 /* 每篇的扫描账目：0 条也要写出来，否则"扫过没有"会被读成"没扫"。 */
 .jdx-review-evidence { font-size: 11px; line-height: 1.5; color: var(--jdx-muted, #66766d); margin: 0 0 6px; }
+/* 版面统计与它的一级小节清单是一组：一起留白，两行之间只留窄缝。 */
+.jdx-review-structure { margin: 0 0 6px; }
+.jdx-review-structure .jdx-review-evidence { margin: 0 0 4px; }
+/* 深读是用户另外花一次请求换来的：与摘要级要点用虚线隔开，账目行写在结论之前。 */
+.jdx-review-deep { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--jdx-line-strong); }
+.jdx-review-deep h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 13px; }
+.jdx-review-deep .jdx-review-raw { margin: 6px 0 0; font-size: 11px; max-height: 240px; overflow: auto; }
+.jdx-review-deep-button {
+  margin-top: 8px; padding: 5px 10px; border: 1px solid var(--jdx-line-strong); border-radius: 6px;
+  background: var(--jdx-surface); color: var(--jdx-text); cursor: pointer; font-size: 12px;
+}
+.jdx-review-deep-button:hover { border-color: var(--jdx-green); }
+.jdx-review-deep-button:disabled { opacity: .5; cursor: default; }
 .jdx-review-table-scroll { overflow-x: auto; border: 1px solid var(--jdx-line-strong); border-radius: 8px; }
 .jdx-review-result table { width: 100%; border-collapse: collapse; text-align: left; min-width: 420px; }
 .jdx-review-result th { position: sticky; top: 0; background: var(--jdx-sidebar); white-space: nowrap; }

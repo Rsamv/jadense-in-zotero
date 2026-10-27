@@ -2,6 +2,7 @@ import { uiText } from "@/zotero/ui-preferences"
 /**
  * 快速解析的 Zotero 侧：读取收藏夹题录、单次派发生成综述、写入独立历史。
  * 默认只发送题录与摘要；勾选扫描后额外解析附件首尾页文字，且只把抽到的链接文本发出去。
+ * 单篇深读是唯一的例外：用户逐篇确认后，单独一次派发送出本机切好的有界正文摘录。
  * BYOK 未确认结果仍遵守不自动重发的契约。
  */
 import type { ByokConfig } from "@/chat/byok-chat"
@@ -23,6 +24,13 @@ import {
   type ReviewPaperRow,
 } from "@/chat/quick-review"
 import { appendQuickReviewRecord, type QuickReviewRecord } from "@/chat/quick-review-history"
+import {
+  DEEP_READ_RESPONSE_FORMAT,
+  buildDeepReadPrompt,
+  parseDeepRead,
+  type DeepReadExcerpt,
+  type DeepReadParsed,
+} from "@/chat/review-deep-read"
 import { featureModelState, type PaperAnalysisModelSelection } from "./ai-settings"
 import { withErrorType } from "./error-report"
 import { readConnection, selectedZoteroCollections, type ZoteroLike } from "./runtime"
@@ -254,8 +262,8 @@ export async function runQuickReview(input: {
     unconfirmed = issue.code === "BYOK_EXECUTION_UNCONFIRMED"
     if (!recovered.trim()) {
       const wrapped: QuickReviewError = Object.assign(new Error(withErrorType(error, error instanceof Error ? error.message : String(error))), {
-        unconfirmed,
-        ...(unconfirmed ? { code: "BYOK_EXECUTION_UNCONFIRMED" } : {}),
+        // 只在真未确认时带这个标记：界面对"可能已计费"和"确定失败"要走两条不同的路。
+        ...(unconfirmed ? { unconfirmed: true, code: "BYOK_EXECUTION_UNCONFIRMED" } : {}),
       })
       throw wrapped
     }
@@ -285,6 +293,7 @@ export async function runQuickReview(input: {
       ...(paper.appendixRefs?.length ? { appendixRefs: paper.appendixRefs } : {}),
       attachmentScanned: paper.attachmentScanned === true, scanPages: paper.scanPages ?? 0,
       ...(paper.scanOutcome ? { scanOutcome: paper.scanOutcome } : {}),
+      ...(paper.structure ? { structure: paper.structure } : {}),
       appendixMarked: paper.appendixMarked === true,
     })),
     overview: result.overview,
@@ -314,3 +323,98 @@ export async function runQuickReview(input: {
 }
 
 export const newQuickReviewSession = (): QuickReviewSession => ({ conversationId: reviewID("review"), clientRequestId: reviewID("review-request") })
+
+export type DeepReadSession = { conversationId: string; clientRequestId: string }
+/** 每次点击都是新会话：深读单独计费，不能与批量综述共用一条未确认记录。 */
+export const newDeepReadSession = (): DeepReadSession => ({ conversationId: reviewID("deep-read"), clientRequestId: reviewID("deep-read-request") })
+
+export type DeepReadRunResult = {
+  read: DeepReadParsed
+  model: string
+  unconfirmed?: boolean
+}
+
+/**
+ * 单篇深读：一次点击＝一次派发，只送本机切好的有界摘录。
+ * 与批量综述同一功能标识（analysis），因此不新增未审计的计费目的地；
+ * BYOK 未确认结果仍不自动重发，错误只投影 requestIssue 白名单里的字段，不回显提供商正文或凭据。
+ */
+export async function runDeepRead(input: {
+  zotero: ZoteroLike
+  title: string
+  excerpt: DeepReadExcerpt
+  session: DeepReadSession
+  signal: AbortSignal
+  invalidJadenseToken?: string | null
+  allowUnconfirmedRetry?: boolean
+  onProgress?: (message: string) => void
+  fetchImpl?: typeof fetch
+  services?: Pick<QuickReviewServices, "send">
+}): Promise<DeepReadRunResult> {
+  const host = input.zotero
+  const fetchImpl = input.fetchImpl ?? ((request: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(request, init))
+  const model = quickReviewModelState(host, input.invalidJadenseToken ?? null)
+  if (!model.ready) throw Object.assign(new Error(model.issue), { code: "AI_NOT_CONFIGURED" } as Partial<QuickReviewError>)
+  const services = { ...defaultServices(host, fetchImpl), ...input.services }
+  const prompt = buildDeepReadPrompt({ title: input.title, excerpt: input.excerpt })
+  /** 接收阶段没有阶段文案，状态行会整段不动；按字数增长补一条自节流的进度，避免看起来像卡死。 */
+  let receiptAt = 0
+  let receiptChars = 0
+  const streamProgress = (state: RequestProgress) => {
+    const activity = requestActivityText(state)
+    if (activity) return activity
+    const chars = state.receivedCharacters ?? 0
+    const now = Date.now()
+    if (state.stage !== "receiving" || chars <= receiptChars || now - receiptAt < 2_000) return ""
+    receiptAt = now
+    receiptChars = chars
+    return uiText(`正在接收深读结果 · 已收到 ${chars.toLocaleString("en-US")} 字`, `Receiving the deep read · ${chars.toLocaleString("en-US")} characters so far`)
+  }
+  const request = (signal: AbortSignal): TemporaryChatSendInput => ({
+    clientRequestId: input.session.clientRequestId,
+    conversationId: input.session.conversationId,
+    clientFeature: "analysis",
+    messages: [{ id: reviewID("deep-read-prompt"), role: "user", text: prompt }],
+    sources: [],
+    signal,
+    requireComplete: true,
+    ...(input.allowUnconfirmedRetry ? { allowUnconfirmedRetry: true } : {}),
+    ...(model.selection.route === "byok" ? {} : { responseFormat: DEEP_READ_RESPONSE_FORMAT }),
+    onProgress: state => {
+      const message = streamProgress(state)
+      if (message && !signal.aborted) { try { input.onProgress?.(message) } catch { /* 进度界面不得影响结果。 */ } }
+    },
+  })
+
+  const notify = (message: string) => { try { input.onProgress?.(message) } catch { /* 同上。 */ } }
+  notify(uiText(
+    `正在使用${model.label}深读这一篇（送出 ${input.excerpt.chars} 字摘录）…`,
+    `Reading this paper in depth with ${model.label} (${input.excerpt.chars} characters of excerpt sent)…`,
+  ))
+  let response = ""
+  let warning: string | undefined
+  let unconfirmed: boolean | undefined
+  try {
+    response = await services.send(request(input.signal), model)
+    input.signal.throwIfAborted()
+  } catch (error) {
+    const recovered = executionResult(error).text
+    const issue = requestIssue(error)
+    unconfirmed = issue.code === "BYOK_EXECUTION_UNCONFIRMED"
+    if (!recovered.trim()) {
+      throw Object.assign(new Error(withErrorType(error, error instanceof Error ? error.message : String(error))), {
+        // 只在真未确认时带这个标记：界面对"可能已计费"和"确定失败"要走两条不同的路。
+        ...(unconfirmed ? { unconfirmed: true, code: "BYOK_EXECUTION_UNCONFIRMED" } : {}),
+      } as Partial<QuickReviewError>)
+    }
+    // 已收到部分内容时不再派发：保留可读者并说明边界，与批量综述同一处理。
+    response = recovered.slice(0, 128_000)
+    warning = withErrorType(error, input.signal.aborted
+      ? uiText("深读已停止；以下为已收到的部分结果。", "The deep read was stopped. The following is the partial result received.")
+      : uiText("深读未完整结束；以下为已收到的部分。", "The deep read did not finish. The following is the partial response."))
+  }
+
+  const read = parseDeepRead(response)
+  if (warning) read.warnings = [warning, ...read.warnings]
+  return { read, model: model.label, ...(unconfirmed ? { unconfirmed } : {}) }
+}

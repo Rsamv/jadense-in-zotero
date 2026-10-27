@@ -7,9 +7,11 @@ import {
   QUICK_REVIEW_CONFIRM_LIMIT,
   QUICK_REVIEW_DEFAULT_LIMIT,
   QUICK_REVIEW_MAX_LIMIT,
+  ratingLevelForScore,
   reviewAvailabilityText,
   reviewRatingText,
   reviewScanState,
+  reviewStructureText,
   type QuickReviewAvailability,
   type QuickReviewDisplayPaper,
   type QuickReviewRatingLevel,
@@ -17,25 +19,31 @@ import {
   type ReviewAppendixRef,
   type ReviewPaperRow,
 } from '@/chat/quick-review'
+import { deepReadSectionText, formatDeepRead, type DeepReadExcerpt, type StoredDeepRead } from '@/chat/review-deep-read'
 import {
   clearQuickReviewHistory,
   quickReviewRecordView,
   readQuickReviewHistory,
   removeQuickReviewRecord,
+  saveQuickReviewDeepRead,
   type QuickReviewRecord,
 } from '@/chat/quick-review-history'
 import {
   collectReviewRows,
   listReviewCollections,
+  newDeepReadSession,
   newQuickReviewSession,
   quickReviewModelState,
+  runDeepRead,
   runQuickReview,
+  type DeepReadRunResult,
+  type DeepReadSession,
   type QuickReviewError,
   type QuickReviewRunResult,
   type QuickReviewSession,
   type ReviewCollection,
 } from './quick-review'
-import { quickReviewScanNotice, scanRowsForAttachmentLinks } from './review-links'
+import { quickReviewScanNotice, readDeepReadExcerpt, scanRowsForAttachmentLinks } from './review-links'
 
 const MAX_VISIBLE_ROWS = 200
 const EVALUATE_PREF_KEY = 'extensions.jadenseInZotero.quickReviewEvaluate'
@@ -106,7 +114,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
   scanPick.setAttribute('aria-label', uiText('扫描附件找开源链接', 'Scan attachments for code links'))
   try { scanPick.checked = host.Prefs?.get(SCAN_PREF_KEY, true) !== false } catch { scanPick.checked = true }
   const scanRow = make('label', '', 'jdx-review-switch')
-  scanRow.append(scanPick, make('span', uiText('扫描附件找开源链接（只送出发现的链接文本）', 'Scan attachments for code links (only the links found are sent)')))
+  scanRow.append(scanPick, make('span', uiText('扫描附件找开源链接与版面统计（只送出链接文本与标题／计数）', 'Scan attachments for code links and layout counts (only link text and titles/counts are sent)')))
   scanPick.addEventListener('change', () => {
     try { host.Prefs?.set(SCAN_PREF_KEY, scanPick.checked, true) } catch { /* 可选设置。 */ }
     updateActions()
@@ -124,18 +132,32 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
   let session = newQuickReviewSession()
   let controller: AbortController | undefined
   const included = new Set<string>()
+  /** 序号 → 这一篇的深读结果：卡片与复制文本都从这里取，换一批综述就清空。 */
+  let deepReads = new Map<number, StoredDeepRead>()
 
   const currentCollection = () => collections.find(entry => String(entry.id) === collectionPick.getValue()) ?? null
   const chosenRows = () => rows.filter(row => included.has(rowKey(row))).slice(0, Number(limitPick.getValue()) || QUICK_REVIEW_DEFAULT_LIMIT)
   const isRecord = (value: QuickReviewRunResult | QuickReviewRecord): value is QuickReviewRecord => !('result' in value)
-  const copySource = () => (!view ? '' : isRecord(view) ? view.notes : view.text)
+  /** 深读写回哪条记录：实时结果与历史记录都带 id，没有结果就没有可写的地方。 */
+  const currentRecordID = () => (!view ? '' : isRecord(view) ? view.id : view.record.id)
+  const titleOf = (index: number) => {
+    const papers = !view ? [] : view.papers as readonly { index?: number; title: string }[]
+    return papers.find((paper, position) => (paper.index ?? position + 1) === index)?.title ?? `#${index}`
+  }
+  // 复制文本要带上深读：否则用户拿走的综述里没有他刚花了一次请求换来的那几段。
+  const copySource = () => {
+    const base = !view ? '' : isRecord(view) ? view.notes : view.text
+    if (!base) return ''
+    const extra = [...deepReads.entries()].sort((left, right) => left[0] - right[0]).map(([index, read]) => formatDeepRead(read, titleOf(index)))
+    return extra.length ? `${base}\n\n${extra.join('\n\n')}` : base
+  }
 
   const updateActions = () => {
     const model = quickReviewModelState(host)
     modelLine.textContent = model.ready
       ? uiText(
-        `使用「${model.label}」汇总整个子收藏夹；发送题录与摘要${scanPick.checked ? '，并解析本机附件首尾页以提取开源链接（只送出链接文本，不送正文）' : '，不读取 PDF'}。一次调用可能消耗额度。${evaluatePick.checked ? ' 同一次调用会附带逐篇评价，不额外增加请求次数。' : ''}`,
-        `Summarises the sub-collection with ${model.label}. Bibliographic metadata and abstracts are sent${scanPick.checked ? ', and local attachment first/last pages are parsed for code links (only the link text leaves the machine)' : ', never PDFs'}. One request that may use credits.${evaluatePick.checked ? ' The same request also returns per-paper ratings, without adding a call.' : ''}`,
+        `使用「${model.label}」汇总整个子收藏夹；发送题录与摘要${scanPick.checked ? '，并解析本机附件以提取开源链接与版面统计（只送出链接文本、附录一级标题与标题／计数，不送正文）' : '，不读取 PDF'}。一次调用可能消耗额度。${evaluatePick.checked ? ' 同一次调用会附带逐篇评价，不额外增加请求次数。' : ''} 单篇「深读」要逐篇确认，是单独一次请求、单独计费。`,
+        `Summarises the sub-collection with ${model.label}. Bibliographic metadata and abstracts are sent${scanPick.checked ? ', and local attachments are parsed for code links and layout counts (only link text, appendix titles and titles/counts leave the machine)' : ', never PDFs'}. One request that may use credits.${evaluatePick.checked ? ' The same request also returns per-paper ratings, without adding a call.' : ''} A per-paper deep read needs its own confirmation and is a separate, separately billed request.`,
       )
       : `${uiText('模型未配置：', 'Model not configured: ')}${model.issue}`
     generate.disabled = busy || !model.ready || !chosenRows().length
@@ -331,34 +353,111 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
               : uiText('附件：本次未扫描（可勾选「扫描附件找开源链接」后重新生成）', 'Attachment: not scanned (enable "Scan attachments for code links" and generate again)')
     return row
   }
-  const paperCard = (paper: QuickReviewDisplayPaper, note: QuickReviewResult['papers'][number] | undefined) => {
+  /**
+   * 版面统计是本机数出来的，不是模型判断：单独一行并写明这点，
+   * 否则用户会把"消融 3 次"读成模型认定这篇做了三次消融。
+   */
+  const structureRow = (paper: QuickReviewDisplayPaper) => {
+    const summary = reviewStructureText(paper.structure)
+    if (!summary) return null
+    const row = make('div', '', 'jdx-review-evidence')
+    row.textContent = `${uiText('版面统计（本机数出）', 'Layout counts (measured locally)')}：${summary}`
+    row.title = uiText(
+      '客户端在本机解析 PDF 时数出的：正文一级小节标题数、图注与表注的去重编号数、参考文献条目数，以及「消融」「基线／对比」「人工评测／用户研究」这些措辞在全文里出现的次数。只有标题与计数会随请求发送，正文一句不出机器。「参考文献 未数出」表示版式没认出来，不是 0 条。',
+      'Counted locally while parsing the PDF: top-level section titles, distinct figure/table caption numbers, reference entries, and how often the words "ablation", "baseline/comparison" and "user study/human evaluation" appear. Only titles and counts are sent; no body text leaves the machine. "reference count unavailable" means the layout was not recognised, not zero.',
+    )
+    if (paper.structure?.headings.length) {
+      const titles = make('div', '', 'jdx-review-links')
+      titles.append(make('span', uiText('正文一级小节', 'Top-level sections'), 'jdx-review-links-label'))
+      for (const title of paper.structure.headings) titles.append(make('span', title, 'jdx-review-appendix-item'))
+      const wrap = make('div', '', 'jdx-review-structure')
+      wrap.append(row, titles)
+      return wrap
+    }
+    return row
+  }
+  /**
+   * 深读账目与结果：先写清"本机读了多少页、送出去哪几节多少字"，再给结论，
+   * 否则用户会把"读了三节摘录"当成"读了整篇"。小节带附件 ID 时可以跳页自查。
+   */
+  const deepReadBlock = (paper: QuickReviewDisplayPaper, onDeepRead: () => void) => {
+    const read = deepReads.get(paper.index)
+    const wrap = make('div', '', 'jdx-review-deep')
+    if (read) {
+      const title = make('h4', uiText('单篇深读（单独一次请求）', 'Deep read (a separate request)'), 'jdx-review-rating-title')
+      if (read.score !== undefined) {
+        const level = ratingLevelForScore(read.score)
+        title.append(make('span', reviewRatingText(level), `jdx-review-flag ${RATING_CLASS[level]}`))
+        const score = make('span', `${read.score}/100`, 'jdx-review-score')
+        score.title = ratingHoverText({ level, basis: read.basis, score: read.score })
+        title.append(score)
+      }
+      const account = make('div', '', 'jdx-review-links')
+      const label = make('span', uiText(`本机读了 ${read.readPages} 页，送出 ${read.chars} 字摘录：`, `${read.readPages} page(s) read locally, ${read.chars} characters sent:`), 'jdx-review-links-label')
+      label.title = uiText(
+        '深读是单独一次请求、单独计费：客户端在本机读这篇的 PDF，只切出至多三节、合计不超过 1200 字的正文摘录送出去，摘录之外的正文、图表、公式与附录都不发送。切不出小节时一段都不送。',
+        'A deep read is a separate, separately billed request: the client reads this PDF locally and sends at most three sections, no more than 1200 characters of body text. Nothing else in the body, figures, formulas or the appendix is sent. If no section can be located, nothing is sent at all.',
+      )
+      account.append(label)
+      for (const section of read.sections) {
+        const text = uiText(`${section.heading}（${section.part === 'tail' ? '节尾' : '节首'}，第 ${section.page} 页）`, `${section.heading} (${section.part === 'tail' ? 'tail' : 'head'}, p. ${section.page})`)
+        if (!section.attachmentID) { account.append(make('span', text, 'jdx-review-appendix-item')); continue }
+        const jump = button(text, () => { void openAppendixPage({ title: section.heading, page: section.page, attachmentID: section.attachmentID! }) }, 'jdx-review-appendix-item jdx-review-jump')
+        jump.title = uiText(`在 Zotero 阅读器中打开第 ${section.page} 页`, `Open page ${section.page} in the Zotero reader`)
+        account.append(jump)
+      }
+      wrap.append(title, account)
+      wrap.append(fieldsBlock([
+        [uiText('一句话', 'In brief'), read.summary],
+        [uiText('方法细节', 'Method detail'), read.method],
+        [uiText('证据强度', 'Evidence'), read.evidence],
+        [uiText('可复现性', 'Reproducibility'), read.reproducibility],
+        [uiText('局限', 'Limitation'), read.limitation],
+        [uiText('评分依据', 'Basis'), read.basis],
+      ]))
+      // 结构化失败也要把模型原文留住：这次请求已经计费，不能只剩一句"解析失败"。
+      if (read.rawText?.trim()) wrap.append(make('pre', read.rawText, 'jdx-review-raw'))
+      wrap.append(make('p', uiText(`${new Date(read.createdAt).toLocaleString()} · ${read.model} · 与批量综述同一评分量程。`, `${new Date(read.createdAt).toLocaleString()} · ${read.model} · scored on the same scale as the batch review.`), 'jdx-review-rating-note'))
+    }
+    wrap.append(button(
+      read ? uiText('重新深读（再发一次请求）', 'Read again (another request)') : uiText('深读这篇（单独一次请求）', 'Deep read this paper (a separate request)'),
+      onDeepRead,
+      'jdx-review-deep-button',
+    ))
+    return wrap
+  }
+  const paperCard = (paper: QuickReviewDisplayPaper, note: QuickReviewResult['papers'][number] | undefined, onDeepRead: () => void) => {
     const card = make('div', '', 'jdx-review-card')
     card.append(make('h4', `${paper.index}. ${paper.title}`))
     const meta = [paper.authors, paper.year, paper.publication].filter(Boolean).join(' · ')
     if (meta) card.append(make('p', meta, 'jdx-review-card-meta'))
     const evidence = evidenceRow(paper)
     if (evidence) card.append(evidence)
+    const structure = structureRow(paper)
+    if (structure) card.append(structure)
     if (paper.links?.length) card.append(linksRow(paper.links))
     if (paper.appendix?.length) card.append(appendixRow(paper.appendix, paper.appendixRefs))
     if (!note) {
       card.append(fieldsBlock([], [uiText('状态', 'Status'), uiText('模型未覆盖本篇。', 'The model did not cover this paper.')]))
-      return card
+    } else {
+      card.append(resourceBadges(note))
+      const pairs: [string, string][] = [
+        [uiText('一句话', 'In brief'), note.hook],
+        [uiText('问题', 'Question'), note.question],
+        [uiText('思路', 'Idea'), note.idea],
+        [uiText('方法', 'Method'), note.method],
+        [uiText('实验流程', 'Experiments'), note.experiments],
+        [uiText('结论', 'Finding'), note.finding],
+        [uiText('局限', 'Limitation'), note.limitation],
+        [uiText('工具', 'Tools'), note.tools],
+      ]
+      if (paper.abstractState !== 'full') pairs.push([uiText('摘要', 'Abstract'), paper.abstractState === 'missing'
+        ? uiText('本地无摘要，结论仅依据题录。', 'No local abstract; conclusions rest on the bibliography only.')
+        : uiText('摘要未完整发送，结论仅限已发送部分。', 'The abstract was not sent in full; findings cover the sent part only.')])
+      card.append(fieldsBlock(pairs))
     }
-    card.append(resourceBadges(note))
-    const pairs: [string, string][] = [
-      [uiText('一句话', 'In brief'), note.hook],
-      [uiText('问题', 'Question'), note.question],
-      [uiText('思路', 'Idea'), note.idea],
-      [uiText('方法', 'Method'), note.method],
-      [uiText('实验流程', 'Experiments'), note.experiments],
-      [uiText('结论', 'Finding'), note.finding],
-      [uiText('局限', 'Limitation'), note.limitation],
-      [uiText('工具', 'Tools'), note.tools],
-    ]
-    if (paper.abstractState !== 'full') pairs.push([uiText('摘要', 'Abstract'), paper.abstractState === 'missing'
-      ? uiText('本地无摘要，结论仅依据题录。', 'No local abstract; conclusions rest on the bibliography only.')
-      : uiText('摘要未完整发送，结论仅限已发送部分。', 'The abstract was not sent in full; findings cover the sent part only.')])
-    card.append(fieldsBlock(pairs))
+    // 深读与批量综述分开摆：它是用户另外花一次请求换来的，边界要看得见。
+    card.append(deepReadBlock(paper, onDeepRead))
     return card
   }
   const ratingCard = (rating: QuickReviewResult['ratings'][number] | undefined) => {
@@ -406,7 +505,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
           block.append(header)
         }
         for (const paper of papers) {
-          const card = paperCard(paper, notes.get(paper.index))
+          const card = paperCard(paper, notes.get(paper.index), () => { void startDeepRead(paper) })
           if (!rated) { block.append(card); continue }
           // 要点与评价放在同一行：随结果区一起滚动，不需要另做滚动同步。
           const pair = make('div', '', 'jdx-review-pair'); pair.append(card, ratingCard(ratings.get(paper.index)))
@@ -442,7 +541,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     resultBox.scrollTop = 0
   }
 
-  const showRecord = (record: QuickReviewRecord) => {
+  const paintRecord = (record: QuickReviewRecord) => {
     const restored = quickReviewRecordView(record)
     const intro = `${uiText('历史 · ', 'History · ')}${record.collection.name} · ${new Date(record.createdAt).toLocaleString()} · ${record.model}`
     if (restored) { paintResult(restored.result, restored.papers, intro); return }
@@ -453,6 +552,19 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     resultBox.append(block)
     if (record.warnings?.length) resultBox.append(notice(record.warnings))
     resultBox.scrollTop = 0
+  }
+
+  /** 点开历史才换深读账目；深读写回后重画沿用当前这份，不能被旧记录覆盖掉。 */
+  const showRecord = (record: QuickReviewRecord) => {
+    deepReads = quickReviewRecordView(record)?.deepReads ?? new Map()
+    paintRecord(record)
+  }
+
+  /** 深读完成后按当前视图重画：结果要落回它自己那张卡片，而不是另开一块。 */
+  const repaint = () => {
+    if (!view) return
+    if (isRecord(view)) paintRecord(view)
+    else paintResult(view.result, view.papers)
   }
 
   const renderHistory = () => {
@@ -486,6 +598,98 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
   confirmDialog.addEventListener('close', () => { const resolve = pendingResolve; pendingResolve = undefined; resolve?.(confirmed) })
   confirmDialog.append(confirmTitle, confirmBody, confirmActions)
 
+  /**
+   * 深读派发与未确认处理：沿用同一会话，只有用户核对提供商后授权才重发。
+   * 返回 null 表示这次没有结果，界面不再往下写历史。
+   */
+  const sendDeepRead = async (title: string, excerpt: DeepReadExcerpt, session: DeepReadSession, signal: AbortSignal, allowUnconfirmedRetry: boolean): Promise<DeepReadRunResult | null> => {
+    try {
+      return await runDeepRead({
+        zotero: host,
+        title,
+        excerpt,
+        session,
+        signal,
+        ...(allowUnconfirmedRetry ? { allowUnconfirmedRetry: true } : {}),
+        onProgress: message => { status.textContent = message },
+      })
+    } catch (error) {
+      const caught = error as QuickReviewError
+      status.textContent = caught.message
+      if (!caught.unconfirmed) return null
+      // 未确认执行不得自动重发：这次深读是单独计费的，重发就是再收一次钱。
+      const retry = await ask(uiText('上次执行结果未确认', 'The previous execution is unconfirmed'),
+        uiText('插件不会自动重发，以免重复计费。请先在提供商后台核对这次深读请求；确认未计费后再授权重发。', 'Nothing is resent automatically, to avoid duplicate charges. Check this deep read request with your provider, then authorise a resend only if it was not billed.'),
+        uiText('已核对，授权重发', 'Checked, resend'))
+      if (!retry) return null
+      status.textContent = uiText('正在按授权重发…', 'Resending as authorised…')
+      return sendDeepRead(title, excerpt, session, signal, true)
+    }
+  }
+
+  /**
+   * 单篇深读：先在本机切摘录（这一步不发送、不计费），把要送的内容逐条报给用户，
+   * 确认后才派发单独一次请求；切不出摘录就停在本机，并说明"没有发送任何内容"。
+   */
+  const startDeepRead = async (paper: QuickReviewDisplayPaper) => {
+    if (busy) return
+    if (typeof paper.libraryID !== 'number' || !paper.itemKey) {
+      status.textContent = uiText('这条记录没有条目定位信息，无法重新读取附件。', 'This record carries no item reference, so the attachment cannot be read again.')
+      return
+    }
+    const row: ReviewPaperRow = { libraryID: paper.libraryID, itemKey: paper.itemKey, title: paper.title, creators: [] }
+    busy = true
+    controller = new AbortController()
+    updateActions()
+    const signal = controller.signal
+    try {
+      status.textContent = uiText('正在本机切取正文摘录（还没有发送任何内容）…', 'Cutting a local body excerpt (nothing has been sent yet)…')
+      const source = await readDeepReadExcerpt({ doc, host, row, signal })
+      if (signal.aborted) { status.textContent = uiText('已停止；没有发送任何内容。', 'Stopped; nothing was sent.'); return }
+      if (!source.excerpt) { status.textContent = source.notice; return }
+      const excerpt = source.excerpt
+      const go = await ask(
+        uiText('送出这一篇的正文摘录？', 'Send this body excerpt?'),
+        uiText(
+          `这是单独一次请求、单独计费：送出 ${excerpt.chars} 字正文摘录（${deepReadSectionText(excerpt.sections)}），本机为切取它读了 ${source.pages} 页。摘录之外的正文、图表、公式与附录都不发送。结果未确认时插件不会自动重发。`,
+          `This is a separate, separately billed request: ${excerpt.chars} characters of body text (${deepReadSectionText(excerpt.sections)}); ${source.pages} page(s) were read locally to cut it. The rest of the body, figures, formulas and the appendix are never sent. Nothing is resent automatically while the result is unconfirmed.`,
+        ),
+        uiText('确认送出摘录', 'Send the excerpt'),
+      )
+      if (!go) { status.textContent = uiText('已取消深读；没有发送任何内容。', 'Deep read cancelled; nothing was sent.'); return }
+      const outcome = await sendDeepRead(paper.title, excerpt, newDeepReadSession(), signal, false)
+      if (!outcome) return
+      const read: StoredDeepRead = {
+        createdAt: new Date().toISOString(),
+        model: outcome.model,
+        // 附件 ID 只写进本机历史：跳页用得上，它不随请求外发。
+        sections: excerpt.sections.map(section => ({ heading: section.heading, part: section.part, page: section.page, ...(source.attachmentID ? { attachmentID: source.attachmentID } : {}) })),
+        chars: excerpt.chars,
+        readPages: source.pages,
+        summary: outcome.read.summary,
+        method: outcome.read.method,
+        evidence: outcome.read.evidence,
+        reproducibility: outcome.read.reproducibility,
+        limitation: outcome.read.limitation,
+        basis: outcome.read.basis,
+        ...(outcome.read.score === undefined ? {} : { score: outcome.read.score }),
+        ...(outcome.read.rawText ? { rawText: outcome.read.rawText } : {}),
+      }
+      deepReads.set(paper.index, read)
+      const recordID = currentRecordID()
+      const saved = recordID && host.Prefs ? saveQuickReviewDeepRead(host.Prefs, recordID, paper.index, read) : false
+      repaint()
+      status.textContent = [
+        ...outcome.read.warnings,
+        saved
+          ? uiText('深读已完成并写入本机历史。', 'The deep read finished and was saved in local history.')
+          : uiText('深读已完成，但没能写入本机历史；结果仍在本窗口，请及时复制。', 'The deep read finished but could not be saved in local history. It stays in this window; copy it before closing.'),
+      ].filter(Boolean).join(' ')
+    } finally {
+      busy = false; controller = undefined; updateActions()
+    }
+  }
+
   const loadCollection = async (id: number) => {
     const token = ++generation
     status.textContent = uiText('正在读取收藏夹…', 'Reading the collection…')
@@ -497,6 +701,7 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
       collectionPick.setOptions(collections.map(entry => ({ value: String(entry.id), label: entry.path.join(' ▸ ') })), String(id))
       rows = collected.rows; scanned = collected.scanned; truncated = collected.truncated
       view = null
+      deepReads = new Map()
       resultBox.replaceChildren(make('p', uiText('尚未生成综述。选择收藏夹后点击「生成综述」，一次调用汇总整个子分类。', 'No review yet. Pick a collection and generate one summary for the whole sub-collection.')))
       status.textContent = ''
       renderRows(); renderHistory()
@@ -524,6 +729,8 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
       }
       const outcome = await runQuickReview({ zotero: host, collection, rows: reviewed, session: localSession, signal: controller.signal, ...(allowUnconfirmedRetry ? { allowUnconfirmedRetry: true } : {}), ...(evaluate ? { evaluate: true } : {}), onProgress: message => { status.textContent = message } })
       view = outcome
+      // 新的一批综述＝新的一条记录：上一批的深读不属于它，留着会挂到别的文献上。
+      deepReads = new Map()
       paintResult(outcome.result, outcome.papers)
       const finished = outcome.historySaved
         ? uiText('综述已完成并写入本机历史。', 'Review finished and saved in local history.')

@@ -16,6 +16,9 @@ import {
   locateReviewAppendixSections,
   mergeReviewAppendix,
   mergeReviewAppendixRefs,
+  extractReviewStructure,
+  reviewStructureText,
+  normalizeReviewStructure,
   MAX_APPENDIX_SECTIONS,
   MAX_REVIEW_LINKS_PER_PAPER,
   type QuickReviewPaperInput,
@@ -351,6 +354,150 @@ describe("review appendix titles", () => {
   })
 })
 
+describe("review layout counts", () => {
+  const page = (text: string) => [{ page: 1, text }]
+
+  it("counts sections, figures, tables, references and wording hits without reading the body", () => {
+    const structure = extractReviewStructure(page([
+      "1 Introduction",
+      "We study edge inference and compare with baselines.",
+      "Figure 1. The system overview.",
+      "2 Method",
+      "Table 1: results.",
+      "3 Experiments",
+      "We run an ablation study and a user study with 12 subjects.",
+      "Figure 2. Accuracy.",
+      "References",
+      "[1] A. Author. Title. 2020.",
+      "[2] B. Author. Title. 2021.",
+      "[3] C. Author. Title. 2022.",
+    ].join("\n")))
+    expect(structure.headings).toEqual(["Introduction", "Method", "Experiments"])
+    expect(structure.figures).toBe(2)
+    expect(structure.tables).toBe(1)
+    expect(structure.references).toBe(3)
+    expect(structure.ablation).toBe(1)
+    expect(structure.baselines).toBe(2)
+    expect(structure.humanEval).toBe(1)
+  })
+
+  it("reads Roman top-level headings and counts Roman table numbers", () => {
+    const structure = extractReviewStructure(page([
+      "I. INTRODUCTION",
+      "A. Subsection of the introduction",
+      "II. METHOD",
+      "TABLE I",
+      "Comparison of tracking errors.",
+      "III. CONCLUSION",
+      "REFERENCES",
+      "[1] A. 2020.",
+      "[2] B. 2021.",
+      "[3] C. 2022.",
+    ].join("\n")))
+    expect(structure.headings).toEqual(["INTRODUCTION", "METHOD", "CONCLUSION"])
+    expect(structure.tables).toBe(1)
+    expect(structure.references).toBe(3)
+  })
+
+  it("leaves diagram step labels, formula rows and sentence-case captions out of the section list", () => {
+    const structure = extractReviewStructure(page([
+      "1 Introduction",
+      "4 Batch",
+      "5 Model",
+      "2. A unified, configuration-driven embodied-policy",
+      "2 + L1) 0.001/0.01 4.0",
+      "3 Method",
+    ].join("\n")))
+    expect(structure.headings).toEqual(["Introduction", "Method"])
+  })
+
+  it("leaves affiliation lines, per-page headers and IEEE paragraph labels out of the section list", () => {
+    const structure = extractReviewStructure(page([
+      "1   School of Computer Science and Engineering, Sun Yat-sen University",
+      "2   自   动   化   学   报   51   卷",
+      "3   Shanghai AI Laboratory",
+      "1   Introduction",
+      "2   自   动   化   学   报   51   卷",
+      "3)   进行目标识别",
+      "2   Method",
+      "2   自   动   化   学   报   51   卷",
+      "3   Conclusion",
+    ].join("\n")))
+    // 页眉每页都印一遍，还会把阿拉伯序号吃掉：不先剔除，后面的真标题全被判成"序号回退"。
+    expect(structure.headings).toEqual(["Introduction", "Method", "Conclusion"])
+  })
+
+  it("leaves contents rows, unit rows, citation fragments and small-caps stubs out of the section list", () => {
+    const structure = extractReviewStructure(page([
+      "1 Introduction",
+      "2 UC San Diego 2 UIUC 3 MIT",
+      "2 Conclusion 23",
+      "3   月 ,   谷歌团队发布了面向开放场景通用任务的具",
+      "4 该模型通过 MOSS [7] 的调用",
+      "5 自动化学报 51 卷 230601",
+      "6 1 M",
+      "2 Method",
+      "3 Experiments",
+    ].join("\n")))
+    expect(structure.headings).toEqual(["Introduction", "Method", "Experiments"])
+  })
+
+  it("keeps the sections after one long title was rejected instead of losing the rest of the paper", () => {
+    const structure = extractReviewStructure(page([
+      "1 Introduction",
+      "2 A Very Long Section Title That Is Rejected Because It Runs Past The Length Limit",
+      "3 Experiments",
+      "9 Conclusion",
+    ].join("\n")))
+    // 第 2 节标题过长被判否后，第 3 节仍要认出来；跳到 9 的不是正文小节序列。
+    expect(structure.headings).toEqual(["Introduction", "Experiments"])
+  })
+
+  it("joins a section title the page broke at a hyphen", () => {
+    const structure = extractReviewStructure(page([
+      "1 Introduction",
+      "2 Extensibility through Stable Con-",
+      "tracts",
+    ].join("\n")))
+    expect(structure.headings).toEqual(["Introduction", "Extensibility through Stable Contracts"])
+  })
+
+  it("does not cut the body short at an appendix pointer inside the text", () => {
+    const structure = extractReviewStructure(page([
+      "1 Introduction",
+      "2 Method",
+      "Appendix S2.",
+      "3 Experiments",
+      "4 Conclusion",
+      "References",
+      "[1] A. 2020.",
+      "[2] B. 2021.",
+      "[3] C. 2022.",
+    ].join("\n")))
+    expect(structure.headings).toEqual(["Introduction", "Method", "Experiments", "Conclusion"])
+    expect(structure.references).toBe(3)
+  })
+
+  it("reports the reference count as unavailable instead of zero when the list style is not recognised", () => {
+    const structure = extractReviewStructure(page([
+      "1 Introduction",
+      "References",
+      "Joao Pedro Araujo, Yanjie Ze, and C. Karen Liu. Retargeting matters. arXiv preprint, 2025.",
+      "Zhanxiang Cao, Yang Zhang, and Yue Gao. Learning motion skills. arXiv preprint, 2025.",
+    ].join("\n")))
+    expect(structure.references).toBeNull()
+    expect(reviewStructureText(structure)).toContain("参考文献 未数出")
+    expect(reviewStructureText(structure)).toContain("一级标题 1 节")
+  })
+
+  it("reads layout counts back from history and drops a record that holds nothing", () => {
+    expect(normalizeReviewStructure({ headings: ["Method"], figures: 200, tables: "3", references: 12, ablation: 1.6, baselines: null, humanEval: 4 }))
+      .toEqual({ headings: ["Method"], figures: 99, tables: 0, references: 12, ablation: 2, baselines: 0, humanEval: 4 })
+    expect(normalizeReviewStructure({ headings: "Method", figures: -3 })).toBeNull()
+    expect(normalizeReviewStructure(null)).toBeNull()
+  })
+})
+
 describe("quick review parsing", () => {
   const papers = [input(), input({ index: 2, itemKey: "KEY2", title: "Second paper" })]
 
@@ -571,6 +718,20 @@ describe("quick review prompt", () => {
     expect(prompt).not.toContain("We collect 40 hours")
   })
 
+  it("sends the locally measured layout counts and forbids reading them as results", () => {
+    const withStructure = prepareQuickReviewPapers([row({
+      structure: { headings: ["Introduction", "Method"], figures: 6, tables: 2, references: 41, ablation: 3, baselines: 5, humanEval: 0 },
+    })])
+    const prompt = buildQuickReviewPrompt({ collectionName: "Edge AI", papers: withStructure })
+    expect(prompt).toContain("structure 是客户端在本机数出来的版面统计，只有标题与计数、没有正文")
+    expect(prompt).toContain("为 null 表示本机没数出来（不是 0，不得写成「没有参考文献」）")
+    expect(prompt).toContain("禁止把这些计数当成实验结果或指标数值")
+    expect(prompt).toContain("禁止在 structure 缺失时假装有统计")
+    expect(prompt).toContain('"structure":{"headings":["Introduction","Method"],"figures":6,"tables":2,"references":41,"ablation":3,"baselines":5,"humanEval":0}')
+    // 版面统计只有标题与计数：本机读到的正文一个字都不进载荷。
+    expect(prompt).not.toContain("We study edge inference")
+  })
+
   it("keeps the one-line note about the paper, not about the collection", () => {
     const prompt = buildQuickReviewPrompt({ collectionName: "Edge AI", papers })
     expect(prompt).toContain("只描述论文本身，不得提收藏夹、目录或分类")
@@ -678,7 +839,14 @@ describe("quick review rendering", () => {
     expect(text).toContain("附录存在，包括以下部分：1. Motion Dataset Selection 2. Additional Training Details")
   })
 
-  it("renders retained raw text when nothing was structured", () => {    const text = formatQuickReview(parseQuickReview("纯文字回答", papers), papers, "快速解析 · Edge AI（2 篇）")
+  it("copies the locally measured layout counts and labels them as counts, not findings", () => {
+    const withStructure = [input({ structure: { headings: ["Introduction", "Method"], figures: 6, tables: 2, references: null, ablation: 3, baselines: 5, humanEval: 0 } })]
+    const text = formatQuickReview(parseQuickReview(JSON.stringify({ overview: "总览", papers: [{ index: 1 }], comparison: [] }), withStructure), withStructure, "快速解析 · Edge AI（1 篇）")
+    expect(text).toContain("版面统计（本机数出，非模型判断）：一级标题 2 节 · 图 6 · 表 2 · 参考文献 未数出 · 消融 3 次 · 基线对照 5 次 · 人工评测 0 次")
+  })
+
+  it("renders retained raw text when nothing was structured", () => {
+    const text = formatQuickReview(parseQuickReview("纯文字回答", papers), papers, "快速解析 · Edge AI（2 篇）")
     expect(text).toBe("快速解析 · Edge AI（2 篇）\n\n纯文字回答")
   })
 

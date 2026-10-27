@@ -1,10 +1,11 @@
-/** jsdom 只挂载快速解析界面：验证派发一次、超量确认门、结构化渲染与历史回显；不联网，也不读真实凭据。 */
+/** jsdom 只挂载快速解析界面：验证派发一次、超量确认门、结构化渲染与历史回显；单篇深读必须逐篇确认，未确认不自动重发。不联网，也不读真实凭据。 */
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { formatQuickReview, parseQuickReview, prepareQuickReviewPapers } from '@/chat/quick-review'
 import { appendQuickReviewRecord, QUICK_REVIEW_HISTORY_PREF_KEY, type QuickReviewRecord } from '@/chat/quick-review-history'
-import { collectReviewRows, type QuickReviewRunResult, type ReviewPaperRow } from './quick-review'
+import type { DeepReadExcerpt } from '@/chat/review-deep-read'
+import { collectReviewRows, type DeepReadRunResult, type QuickReviewRunResult, type ReviewPaperRow } from './quick-review'
 import type { ZoteroLike } from './runtime'
 import { mountQuickReview } from './quick-review-ui'
 import { initializeUiLocale } from './ui-preferences'
@@ -12,15 +13,22 @@ import { initializeUiLocale } from './ui-preferences'
 const EVALUATE_PREF_KEY = 'extensions.jadenseInZotero.quickReviewEvaluate'
 const SCAN_PREF_KEY = 'extensions.jadenseInZotero.quickReviewScanLinks'
 
-const state = vi.hoisted(() => ({ run: vi.fn(), scan: vi.fn() }))
+const state = vi.hoisted(() => ({ run: vi.fn(), scan: vi.fn(), deep: vi.fn(), excerpt: vi.fn(), copied: vi.fn() }))
 vi.mock('./quick-review', async importActual => ({
   ...(await importActual<typeof import('./quick-review')>()),
   runQuickReview: (input: unknown) => state.run(input),
+  runDeepRead: (input: unknown) => state.deep(input),
 }))
 // 附件扫描要读 pdf.js 与磁盘，jsdom 里两者都不存在：只换掉扫描本身，回执文案沿用真实实现。
 vi.mock('./review-links', async importActual => ({
   ...(await importActual<typeof import('./review-links')>()),
   scanRowsForAttachmentLinks: (input: unknown) => state.scan(input),
+  readDeepReadExcerpt: (input: unknown) => state.excerpt(input),
+}))
+// 剪贴板在 jsdom 里不可写：只截下要复制的文本，验证深读也进了复制全文。
+vi.mock('./connection-display', async importActual => ({
+  ...(await importActual<typeof import('./connection-display')>()),
+  copyTextToClipboard: (_host: unknown, text: string) => { state.copied(text); return Promise.resolve(true) },
 }))
 
 // jsdom 不给 createElementNS 生成的 <dialog> 提供模态 API；按 Gecko 语义用 open 属性补齐开合与 close 事件。
@@ -88,11 +96,33 @@ const outcome = (rows: ReviewPaperRow[], evaluate = false): QuickReviewRunResult
   return { record, result, text, papers, historySaved: true }
 }
 
+/** 本机切出的有界摘录：只有这一段正文允许离开本机，确认框要照实报出字数与小节。 */
+const excerptFixture = (): DeepReadExcerpt => {
+  const sections = [{ heading: 'Method', part: 'head' as const, page: 3, text: 'We quantize the attention cache.' }]
+  return { sections, readPages: 10, chars: sections.reduce((total, section) => total + section.text.length, 0) }
+}
+const deepSource = () => ({ excerpt: excerptFixture(), attachmentID: 101, outcome: 'parsed' as const, pages: 10, notice: `本机读了 10 页，切出 ${excerptFixture().chars} 字摘录：Method（节首，第 3 页）。` })
+const deepOutcome = (): DeepReadRunResult => ({
+  model: '攻玉',
+  read: {
+    summary: '把注意力缓存量化后跑在端侧。', method: '摘录：量化加融合核，超参未给。', evidence: '摘录：单款移动 NPU 上对比三个基线。',
+    reproducibility: '摘录：训练设置缺失。', limitation: '摘录：只测了一款芯片。', basis: '摘录：数据为作者自述。', warnings: [], score: 72,
+  },
+})
+
 const flush = async () => { for (let step = 0; step < 12; step += 1) await Promise.resolve(); await new Promise(resolve => setTimeout(resolve, 0)) }
 const click = async (node: Element | undefined) => { (node as HTMLButtonElement | undefined)?.click(); await flush() }
 const statusText = (root: Element) => root.querySelector('.jdx-manager-inline-status')?.textContent ?? ''
 /** 扫描概况与勾选预算共用同一个类名：断言时把两段都拼上。 */
 const scanLines = (root: Element) => [...root.querySelectorAll('.jdx-review-scan')].map(node => node.textContent).join(' ')
+const dialogOf = (root: Element) => root.querySelector<HTMLDialogElement>('dialog.jdx-review-confirm')!
+const dialogButton = (root: Element, text: string) => [...dialogOf(root).querySelectorAll('button')].find(button => button.textContent?.includes(text))
+const deepButtons = (root: Element) => [...root.querySelectorAll<HTMLButtonElement>('.jdx-review-deep-button')]
+/** 深读要写回已存在的那条记录，因此从历史点开，而不是走实盘派发。 */
+const openSavedRecord = async (root: Element) => {
+  const row = root.querySelector('.jdx-review-history-row')!
+  await click([...row.querySelectorAll('button')].find(button => !button.textContent?.includes('删除')))
+}
 
 function mount(count: number, options: { evaluatePref?: boolean; scanPref?: boolean } = {}) {
   const { host, values, launcher, readerOpen } = fixture(count)
@@ -104,6 +134,9 @@ function mount(count: number, options: { evaluatePref?: boolean; scanPref?: bool
     rows: rows.map(row => ({ ...row, attachmentScanned: true, scanPages: 10, scanOutcome: 'parsed' as const })),
     scanned: rows.length, parsed: rows.length, found: 0, withAppendix: 0, noAttachment: 0, pages: 30, oversize: 0, unreadable: 0, unavailable: 0, parserMissing: false, readerMissing: false,
   }))
+  // 深读默认能切出摘录：这几条测试要看的是确认门与派发路径，不是取料本身。
+  state.excerpt.mockImplementation(async () => deepSource())
+  state.deep.mockImplementation(async () => deepOutcome())
   const review = mountQuickReview(document, host, vi.fn())
   const root = document.querySelector<HTMLElement>('#jadense-quick-review-dialog')!
   const labeled = (text: string) => [...root.querySelectorAll('button')].find(button => button.textContent?.includes(text))
@@ -121,7 +154,7 @@ function mount(count: number, options: { evaluatePref?: boolean; scanPref?: bool
   return { host, values, review, root, labeled, pickText, choose, evaluateSwitch, scanSwitch, launcher, readerOpen }
 }
 
-afterEach(() => { document.body.replaceChildren(); state.run.mockReset(); state.scan.mockReset() })
+afterEach(() => { document.body.replaceChildren(); state.run.mockReset(); state.scan.mockReset(); state.deep.mockReset(); state.excerpt.mockReset(); state.copied.mockReset() })
 
 it('scans the collection, dispatches once and renders each section', async () => {
   const { review, root, labeled, pickText } = mount(3)
@@ -360,7 +393,7 @@ it('leaves local attachments alone when the scan switch is off', async () => {
   scanSwitch().checked = true; scanSwitch().dispatchEvent(new Event('change'))
   await flush()
   expect(values.get(SCAN_PREF_KEY)).toBe(true)
-  expect(root.querySelector('.jdx-review-model')?.textContent).toContain('只送出链接文本，不送正文')
+  expect(root.querySelector('.jdx-review-model')?.textContent).toContain('只送出链接文本、附录一级标题与标题／计数，不送正文')
   review.dispose()
 })
 
@@ -408,5 +441,118 @@ it('reopens a saved review as cards with their ratings instead of a text dump', 
   expect(root.querySelectorAll('.jdx-review-flag-medium')).toHaveLength(2)
   expect(root.querySelector('pre.jdx-review-raw')).toBeNull()
   expect([...root.querySelectorAll('.jdx-review-fields dt')].map(node => node.textContent)).toContain('实验流程')
+  review.dispose()
+})
+
+it('deep reads one paper only after the user confirms the bounded excerpt', async () => {
+  const { review, root, host, values, labeled, readerOpen } = mount(2)
+  const rows = (await collectReviewRows(host, 1)).rows
+  appendQuickReviewRecord(host.Prefs!, outcome(rows, true).record)
+  await review.open([1])
+  await openSavedRecord(root)
+  const excerpt = excerptFixture()
+  expect(deepButtons(root).map(button => button.textContent)).toEqual(['深读这篇（单独一次请求）', '深读这篇（单独一次请求）'])
+  await click(deepButtons(root)[0])
+  // 本机切摘录这一步不发送：确认门出现之前，派发一次都不能发生。
+  expect(state.excerpt).toHaveBeenCalledTimes(1)
+  expect(state.excerpt.mock.calls[0][0].row).toMatchObject({ libraryID: 1, itemKey: 'K1', title: 'Paper 1' })
+  expect(state.deep).not.toHaveBeenCalled()
+  expect(dialogOf(root).hasAttribute('open')).toBe(true)
+  expect(dialogOf(root).textContent).toContain('送出这一篇的正文摘录？')
+  expect(dialogOf(root).textContent).toContain('单独一次请求、单独计费')
+  expect(dialogOf(root).textContent).toContain(`送出 ${excerpt.chars} 字正文摘录`)
+  expect(dialogOf(root).textContent).toContain('Method（节首，第 3 页）')
+  expect(dialogOf(root).textContent).toContain('本机为切取它读了 10 页')
+  expect(dialogOf(root).textContent).toContain('摘录之外的正文、图表、公式与附录都不发送')
+  expect(dialogOf(root).textContent).toContain('结果未确认时插件不会自动重发')
+  await click(dialogButton(root, '取消'))
+  expect(state.deep).not.toHaveBeenCalled()
+  expect(statusText(root)).toContain('已取消深读；没有发送任何内容。')
+
+  await click(deepButtons(root)[0])
+  await click(dialogButton(root, '确认送出摘录'))
+  expect(state.deep).toHaveBeenCalledTimes(1)
+  expect(state.deep.mock.calls[0][0].session.conversationId).toMatch(/^deep-read-/)
+  expect(state.deep.mock.calls[0][0].excerpt.chars).toBe(excerpt.chars)
+  expect(state.deep.mock.calls[0][0].allowUnconfirmedRetry).toBeUndefined()
+  expect(statusText(root)).toContain('深读已完成并写入本机历史。')
+  // 结果写在自己的卡片里：账目在结论之前，小节可以跳页自查。
+  const deep = root.querySelectorAll('.jdx-review-deep')[0]
+  expect(deep.textContent).toContain('单篇深读（单独一次请求）')
+  expect(deep.querySelector('.jdx-review-score')?.textContent).toBe('72/100')
+  expect(deep.textContent).toContain(`本机读了 10 页，送出 ${excerpt.chars} 字摘录：`)
+  expect([...deep.querySelectorAll('.jdx-review-fields dt')].map(node => node.textContent))
+    .toEqual(['一句话', '方法细节', '证据强度', '可复现性', '局限', '评分依据'])
+  await click(deep.querySelector<HTMLButtonElement>('.jdx-review-jump'))
+  expect(readerOpen).toHaveBeenCalledWith(101, { pageIndex: 2 })
+  expect(deepButtons(root)[0].textContent).toBe('重新深读（再发一次请求）')
+  // 只有被点开的那一篇带上深读，另一篇仍是原样。
+  expect(root.querySelectorAll('.jdx-review-deep')[1].querySelector('.jdx-review-fields')).toBeNull()
+  const stored = JSON.parse(String(values.get(QUICK_REVIEW_HISTORY_PREF_KEY))).records[0]
+  expect(stored.papers[0].deepRead.summary).toBe('把注意力缓存量化后跑在端侧。')
+  expect(stored.papers[0].deepRead.sections).toEqual([{ heading: 'Method', part: 'head', page: 3, attachmentID: 101 }])
+  expect(stored.papers[1].deepRead).toBeUndefined()
+  // 复制全文要带上深读：那几段是用户另外花一次请求换来的。
+  await click(labeled('复制全文'))
+  expect(state.copied).toHaveBeenCalledTimes(1)
+  expect(state.copied.mock.calls[0][0]).toContain('深读 · Paper 1')
+  expect(state.copied.mock.calls[0][0]).toContain(`送出摘录 ${excerpt.chars} 字 · 本机读了 10 页`)
+  expect(state.copied.mock.calls[0][0]).toContain('内容评分：72/100（中等）')
+  review.dispose()
+})
+
+it('stops in the local step and sends nothing when no section could be cut', async () => {
+  const { review, root, host } = mount(2)
+  appendQuickReviewRecord(host.Prefs!, outcome((await collectReviewRows(host, 1)).rows, true).record)
+  state.excerpt.mockImplementation(async () => ({
+    excerpt: null, outcome: 'parsed' as const, pages: 10,
+    notice: '本机读了 10 页，但没能切出可送的正文摘录：认不出正文一级小节，或这些小节里没有成段正文；这次没有发送任何内容。',
+  }))
+  await review.open([1])
+  await openSavedRecord(root)
+  await click(deepButtons(root)[0])
+  expect(state.excerpt).toHaveBeenCalledTimes(1)
+  expect(state.deep).not.toHaveBeenCalled()
+  // 确认门都不该出现：没有摘录可送，问用户"要不要送"是假选择。
+  expect(dialogOf(root).hasAttribute('open')).toBe(false)
+  expect(statusText(root)).toContain('没能切出可送的正文摘录')
+  expect(statusText(root)).toContain('没有发送任何内容')
+  expect(root.querySelector('.jdx-review-deep .jdx-review-fields')).toBeNull()
+  expect(deepButtons(root)[0].textContent).toBe('深读这篇（单独一次请求）')
+  review.dispose()
+})
+
+it('never resends an unconfirmed deep read and reuses the same session once authorized', async () => {
+  const { review, root, host, values } = mount(2)
+  appendQuickReviewRecord(host.Prefs!, outcome((await collectReviewRows(host, 1)).rows, true).record)
+  state.deep.mockImplementation(async () => {
+    throw Object.assign(new Error('【未知错误】BYOK 上次执行结果未确认。已有内容保留；请先核对提供商，不会自动重发。'), { unconfirmed: true, code: 'BYOK_EXECUTION_UNCONFIRMED' })
+  })
+  await review.open([1])
+  await openSavedRecord(root)
+  await click(deepButtons(root)[0])
+  await click(dialogButton(root, '确认送出摘录'))
+  expect(state.deep).toHaveBeenCalledTimes(1)
+  expect(statusText(root)).toContain('不会自动重发')
+  // 未确认之后弹出的是授权门；用户不点，插件自己一次都不重发。
+  expect(dialogOf(root).hasAttribute('open')).toBe(true)
+  expect(dialogOf(root).textContent).toContain('上次执行结果未确认')
+  expect(dialogOf(root).textContent).toContain('插件不会自动重发，以免重复计费')
+  await click(dialogButton(root, '取消'))
+  expect(state.deep).toHaveBeenCalledTimes(1)
+  expect(root.querySelector('.jdx-review-deep .jdx-review-fields')).toBeNull()
+  expect(JSON.parse(String(values.get(QUICK_REVIEW_HISTORY_PREF_KEY))).records[0].papers.every((paper: { deepRead?: unknown }) => !paper.deepRead)).toBe(true)
+
+  await click(deepButtons(root)[0])
+  await click(dialogButton(root, '确认送出摘录'))
+  expect(state.deep).toHaveBeenCalledTimes(2)
+  expect(state.deep.mock.calls[1][0].allowUnconfirmedRetry).toBeUndefined()
+  await click(dialogButton(root, '已核对，授权重发'))
+  expect(state.deep).toHaveBeenCalledTimes(3)
+  // 授权后的重发沿用同一次会话：不产生第二条未确认记录。
+  expect(state.deep.mock.calls[2][0].allowUnconfirmedRetry).toBe(true)
+  expect(state.deep.mock.calls[2][0].session).toEqual(state.deep.mock.calls[1][0].session)
+  await click(dialogButton(root, '取消'))
+  expect(state.deep).toHaveBeenCalledTimes(3)
   review.dispose()
 })

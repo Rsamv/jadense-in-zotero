@@ -1,22 +1,23 @@
-/** 附件扫描的边界：整篇都读但只外传链接文本与附录标题、扫到什么没扫到都要报数、环境缺件时不标记已扫。 */
+/** 附件扫描的边界：整篇都读但只外传链接文本与附录标题、扫到什么没扫到都要报数、环境缺件时不标记已扫；单篇深读只交出有界摘录，切不出来就一段都不送。 */
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ReviewPaperRow } from '@/chat/quick-review'
-import { quickReviewScanNotice, scanRowsForAttachmentLinks } from './review-links'
+import { DEEP_READ_EXCERPT_CHARS_MAX } from '@/chat/review-deep-read'
+import { quickReviewScanNotice, readDeepReadExcerpt, scanRowsForAttachmentLinks } from './review-links'
 import { initializeUiLocale } from './ui-preferences'
 import type { ZoteroLike } from './runtime'
 
-const state = vi.hoisted(() => ({ getDocument: vi.fn(), loaded: 0, rejects: false, pages: [] as number[], annots: {} as Record<number, string[]> }))
+const state = vi.hoisted(() => ({ getDocument: vi.fn(), loaded: 0, rejects: false, pages: [] as number[], annots: {} as Record<number, string[]>, numPages: [] as number[], texts: null as Record<number, string> | null }))
 
-/** 十页样例：取证要读全部页，链接与附录标题分别埋在首页、中间页与末页。 */
+/** 十页样例：取证要读全部页，链接与附录标题分别埋在首页、中间页与末页；版面标题埋在正文页。 */
 const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const PAGE_TEXT: Record<number, string> = {
   1: 'Project page at https://yushi-du.github.io/COLA/ with demos. Our project website is available at https://\nexpressive-humanoid.github.io.',
   2: 'Body prose without any address here.',
-  3: 'Body prose without any address here.',
+  3: '2 Method\nWe compare with three baselines and report an ablation.',
   4: 'Body prose without any address here.',
-  5: 'A results table with no link.',
+  5: '3 Experiments\nFigure 4. Accuracy curves.\nTable 2: comparison of tracking errors.',
   6: 'Code: https://github.com/tiny/attn.',
   7: 'Reference https://doi.org/10.1145/3197517.3201311 is not a code link.',
   8: 'Robot hardware page https://www.unitree.com/h1.',
@@ -35,11 +36,12 @@ vi.mock('./pdf-module', async importActual => ({
         state.getDocument(input)
         return {
           promise: Promise.resolve({
-            numPages: 10,
+            // 一篇可能有多个附件：用队列给每个附件指定页数，验证深读取的是正文最全的那份。
+            numPages: state.numPages.length ? state.numPages.shift()! : 10,
             getPage: async (page: number) => {
               state.pages.push(page)
               return {
-                getTextContent: async () => ({ items: [{ str: PAGE_TEXT[page] ?? '', hasEOL: true }] }),
+                getTextContent: async () => ({ items: [{ str: (state.texts ?? PAGE_TEXT)[page] ?? '', hasEOL: true }] }),
                 // 超链接注释：文字层抽不出网址时，地址仍然挂在这里。
                 getAnnotations: async () => (state.annots[page] ?? []).map(url => ({ subtype: 'Link', url })),
               }
@@ -81,7 +83,7 @@ const io = (bytes: () => Uint8Array) => {
 
 beforeEach(() => {
   initializeUiLocale({ locale: 'zh-CN' })
-  state.getDocument.mockReset(); state.loaded = 0; state.rejects = false; state.pages = []; state.annots = {}
+  state.getDocument.mockReset(); state.loaded = 0; state.rejects = false; state.pages = []; state.annots = {}; state.numPages = []; state.texts = null
   io(() => new Uint8Array([1, 2, 3]))
 })
 
@@ -114,12 +116,16 @@ describe('attachment link scanning', () => {
       { title: 'Additional Training Details', page: 10, attachmentID: 101 },
     ])
     expect(scanned.rows[0].attachmentScanned).toBe(true)
-    expect(scanned).toMatchObject({ scanned: 1, parsed: 1, found: 1, withAppendix: 1, noAttachment: 0, pages: 10, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false })
+    // 版面统计只带标题与计数：正文那句"compare with three baselines"本身不外发，只留下命中次数。
+    expect(scanned.rows[0].structure).toEqual({ headings: ['Method', 'Experiments'], figures: 1, tables: 1, references: null, ablation: 1, baselines: 2, humanEval: 0 })
+    expect(scanned).toMatchObject({ scanned: 1, parsed: 1, found: 1, withAppendix: 1, withStructure: 1, noAttachment: 0, pages: 10, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false })
     expect(JSON.stringify(scanned.rows)).not.toContain('Body prose')
     expect(JSON.stringify(scanned.rows)).not.toContain('40 hours')
+    expect(JSON.stringify(scanned.rows)).not.toContain('three baselines')
     // 扫到了东西也要报数：回执不能只在出问题时才开口。
     expect(quickReviewScanNotice(scanned)).toContain('读了 1 篇 PDF 共 10 页')
     expect(quickReviewScanNotice(scanned)).toContain('发现 1 条链接、1 篇有附录')
+    expect(quickReviewScanNotice(scanned)).toContain('1 篇数出版面结构')
   })
 
   it('picks links out of PDF hyperlink annotations when the text layer has no URL', async () => {
@@ -261,6 +267,115 @@ describe('attachment link scanning', () => {
     const scanned = await scanRowsForAttachmentLinks({ doc: document, host: broken, rows: [row('PAPER1')] })
     expect(scanned).toMatchObject({ scanned: 1, found: 0, parsed: 0 })
     expect(scanned.rows[0].attachmentScanned).toBe(false)
+  })
+})
+
+describe('deep read excerpt sourcing', () => {
+  it('cuts a bounded excerpt locally and reports which sections and pages it came from', async () => {
+    const source = await readDeepReadExcerpt({ doc: document, host: pdfHost, row: row('PAPER1') })
+    expect(source.outcome).toBe('parsed')
+    expect(source.attachmentID).toBe(101)
+    expect(source.pages).toBe(10)
+    expect(source.excerpt?.sections.map(section => [section.heading, section.part, section.page])).toEqual([
+      ['Method', 'head', 3], ['Experiments', 'head', 5],
+    ])
+    expect(source.excerpt!.chars).toBeGreaterThan(0)
+    expect(source.excerpt!.chars).toBeLessThanOrEqual(DEEP_READ_EXCERPT_CHARS_MAX)
+    expect(source.excerpt!.chars).toBe(source.excerpt!.sections.reduce((total, section) => total + section.text.length, 0))
+    // 账目写在回执里：确认框要能照实说出读了多少页、切了哪几节。
+    expect(source.notice).toContain('本机读了 10 页')
+    expect(source.notice).toContain('Method（节首，第 3 页）')
+    // 正文边界之外的内容不进摘录：附录页那句数据描述没有被送出去。
+    const sent = source.excerpt!.sections.map(section => section.text).join('\n')
+    expect(sent).not.toContain('40 hours')
+    expect(sent).not.toContain('Motion Dataset Selection')
+  })
+
+  it('reads the attachment with the most pages when a paper has several PDFs', async () => {
+    state.numPages = [4, 10]
+    const attachments: Record<number, unknown> = { 201: pdfAttachment('C:/tmp/short.pdf'), 202: pdfAttachment('C:/tmp/full.pdf') }
+    const host = {
+      Items: {
+        getByLibraryAndKey: (_libraryID: number, key: string) => (key === 'PAPER1' ? { key, libraryID: 1, getAttachments: () => [201, 202] } : false),
+        get: (id: number) => attachments[id],
+      },
+    } as unknown as ZoteroLike
+    const source = await readDeepReadExcerpt({ doc: document, host, row: row('PAPER1') })
+    // 深读要的是正文最全的那份 PDF：跳页也只有对着它才准。
+    expect(source.attachmentID).toBe(202)
+    expect(source.pages).toBe(14)
+    expect(source.excerpt).not.toBeNull()
+  })
+
+  it('refuses without sending anything when the parser, the reader or the attachment list is unavailable', async () => {
+    state.rejects = true
+    const noParser = await readDeepReadExcerpt({ doc: document, host: pdfHost, row: row('PAPER1') })
+    expect(noParser.excerpt).toBeNull()
+    expect(noParser.outcome).toBe('unavailable')
+    expect(noParser.notice).toContain('本机未能加载 PDF 解析模块')
+    expect(noParser.notice).toContain('没有发送任何内容')
+
+    state.rejects = false
+    delete (globalThis as typeof globalThis & { IOUtils?: unknown }).IOUtils
+    const noReader = await readDeepReadExcerpt({ doc: document, host: pdfHost, row: row('PAPER1') })
+    expect(noReader.excerpt).toBeNull()
+    expect(noReader.notice).toContain('缺少附件读取能力')
+    expect(noReader.notice).toContain('没有发送任何内容')
+    io(() => new Uint8Array([1, 2, 3]))
+
+    const unreadableList = {
+      Items: {
+        getByLibraryAndKeyAsync: async () => ({
+          getAttachments: () => { throw new Error('Item data not yet loaded (childItems)') },
+          loadDataType: async () => { throw new Error('database is closed') },
+        }),
+        get: () => false,
+      },
+    } as unknown as ZoteroLike
+    const noList = await readDeepReadExcerpt({ doc: document, host: unreadableList, row: row('PAPER1') })
+    // 未读到附件列表 ≠ 这篇没有附件：说法必须分开，下次点击还要能重试。
+    expect(noList.excerpt).toBeNull()
+    expect(noList.outcome).toBe('unavailable')
+    expect(noList.notice).toContain('未能读取这篇的附件列表')
+    expect(noList.notice).toContain('没有发送任何内容')
+  })
+
+  it('says so when there is no PDF, when the PDF is too large, and when the run was stopped', async () => {
+    const empty = { Items: { getByLibraryAndKey: () => ({ key: 'PAPER9', getAttachments: () => [] }), get: () => null } } as unknown as ZoteroLike
+    const noPdf = await readDeepReadExcerpt({ doc: document, host: empty, row: row('PAPER9') })
+    expect(noPdf.excerpt).toBeNull()
+    expect(noPdf.outcome).toBe('noAttachment')
+    expect(noPdf.notice).toContain('没有可读的 PDF 附件')
+    expect(noPdf.notice).toContain('没有发送任何内容')
+
+    io(() => new Uint8Array(60_000_001))
+    state.getDocument.mockClear()
+    const tooBig = await readDeepReadExcerpt({ doc: document, host: pdfHost, row: row('PAPER1') })
+    expect(tooBig.excerpt).toBeNull()
+    expect(tooBig.outcome).toBe('oversize')
+    expect(tooBig.notice).toContain('超过 60 MB')
+    expect(tooBig.notice).toContain('没有发送任何内容')
+    expect(state.getDocument).not.toHaveBeenCalled()
+
+    io(() => new Uint8Array([1, 2, 3]))
+    const stopped = await readDeepReadExcerpt({ doc: document, host: pdfHost, row: row('PAPER1'), signal: AbortSignal.abort() })
+    // 用户点了停止：不能报成"这篇没有 PDF 附件"。
+    expect(stopped.excerpt).toBeNull()
+    expect(stopped.notice).toContain('深读已停止')
+    expect(stopped.notice).toContain('没有发送任何内容')
+    expect(state.getDocument).not.toHaveBeenCalled()
+  })
+
+  it('reports a paper whose sections could not be located instead of shipping whole pages', async () => {
+    state.texts = { 1: 'Plain prose without any heading at all.', 2: 'More plain prose in the same shape.' }
+    const source = await readDeepReadExcerpt({ doc: document, host: pdfHost, row: row('PAPER1') })
+    // 认不出一级小节就一段都不送：整页倒出去既突破预算，也说不清送的是哪一节。
+    expect(source.excerpt).toBeNull()
+    expect(source.outcome).toBe('parsed')
+    expect(source.pages).toBe(10)
+    expect(source.notice).toContain('没能切出可送的正文摘录')
+    expect(source.notice).toContain('认不出正文一级小节')
+    expect(source.notice).toContain('没有发送任何内容')
   })
 })
 

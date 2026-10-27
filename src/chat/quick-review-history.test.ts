@@ -1,4 +1,4 @@
-/** 历史只按收藏夹归档，损坏或不完整的记录一律丢弃而不是改写界面状态。 */
+/** 历史只按收藏夹归档，损坏或不完整的记录一律丢弃而不是改写界面状态；单篇深读写回那一篇，坏页码不凑数。 */
 import { describe, expect, it, vi } from "vitest"
 
 import {
@@ -8,8 +8,10 @@ import {
   quickReviewRecordView,
   readQuickReviewHistory,
   removeQuickReviewRecord,
+  saveQuickReviewDeepRead,
   type QuickReviewRecord,
 } from "./quick-review-history"
+import type { StoredDeepRead } from "./review-deep-read"
 
 const record = (overrides: Partial<QuickReviewRecord> = {}): QuickReviewRecord => ({
   id: "review-00000000-0000-4000-8000-000000000001",
@@ -102,8 +104,11 @@ const structuredRecord = (): QuickReviewRecord => ({
         { title: "A. Motion Dataset Selection", page: 7, attachmentID: 101 },
         { title: "B. 没存进小节的标题", page: 9, attachmentID: 101 },
         { title: "A. Motion Dataset Selection", page: 0, attachmentID: 101 },
-      ] },
-    { libraryID: 1, itemKey: "PAPER2", title: "Edge compilers", authors: "Chen Rui", year: "2024", publication: "MLSys", index: 2, abstractState: "missing" },
+      ],
+      structure: { headings: ["Introduction", "Method"], figures: 6, tables: 2, references: 41, ablation: 3, baselines: 5, humanEval: 0 } },
+    { libraryID: 1, itemKey: "PAPER2", title: "Edge compilers", authors: "Chen Rui", year: "2024", publication: "MLSys", index: 2, abstractState: "missing",
+      // 全空的版面统计等于"没数出来"：不能存成一条 0，否则历史里会显示"图 0 · 表 0"。
+      structure: { headings: [], figures: 0, tables: 0, references: null, ablation: 0, baselines: 0, humanEval: 0 } },
   ],
   review: {
     notes: [
@@ -141,6 +146,9 @@ describe("quick review history restore", () => {
     expect(restored?.papers[0].appendixRefs).toEqual([{ title: "Motion Dataset Selection", page: 7, attachmentID: 101 }])
     expect(restored?.papers[1].appendix).toBeUndefined()
     expect(restored?.papers[1].appendixRefs).toBeUndefined()
+    // 版面统计随记录保存，历史点开才能复原"本机数出"的那一行；全空的一条不存。
+    expect(restored?.papers[0].structure).toEqual({ headings: ["Introduction", "Method"], figures: 6, tables: 2, references: 41, ablation: 3, baselines: 5, humanEval: 0 })
+    expect(restored?.papers[1].structure).toBeUndefined()
     expect(restored?.result.ratings.map(rating => rating.index).sort()).toEqual([1, 2])
     // 分数写入后档位由分数折算；旧记录没有分数时才沿用模型档位。
     expect(restored?.result.ratings.find(rating => rating.index === 2)).toMatchObject({ score: 55, level: "low" })
@@ -173,5 +181,94 @@ describe("quick review history restore", () => {
     const saved = appendQuickReviewRecord(prefs, { ...structuredRecord(), review: { notes: [{ index: 4, hook: "x", question: "", idea: "", method: "", experiments: "", finding: "", limitation: "", tools: "", code: "unknown", data: "unknown", resourceNote: "" }], comparison: [], trends: "", gaps: "", ratings: [], ratingOverview: "", evaluated: false } })
     expect(saved.review).toBeUndefined()
     expect(quickReviewRecordView(saved)).toBeNull()
+  })
+})
+
+/** 深读发生在综述落库之后：结果按记录 ID 与序号写回那一篇，不重存整条记录。 */
+const deepRead = (overrides: Partial<StoredDeepRead> = {}): StoredDeepRead => ({
+  createdAt: "2026-10-27T03:00:00.000Z",
+  model: "BYOK · gpt-5",
+  sections: [{ heading: "Method", part: "head", page: 2, attachmentID: 101 }],
+  chars: 320,
+  readPages: 10,
+  summary: "把推理链路压到端侧运行。",
+  method: "摘录：给出蒸馏与量化两步，超参未给。",
+  evidence: "摘录：单款移动 NPU 上对比三个基线。",
+  reproducibility: "摘录：训练设置缺失。",
+  limitation: "摘录：只测了一款芯片。",
+  basis: "摘录：证据来自作者自述。",
+  score: 72,
+  ...overrides,
+})
+
+describe("quick review deep read write-back", () => {
+  it("stores the deep read on the existing record without adding or reordering records", () => {
+    const { prefs } = store()
+    appendQuickReviewRecord(prefs, structuredRecord())
+    appendQuickReviewRecord(prefs, { ...structuredRecord(), id: "review-2", createdAt: "2026-10-27T02:00:00.000Z" })
+    expect(saveQuickReviewDeepRead(prefs, "review-2", 2, deepRead())).toBe(true)
+    const records = readQuickReviewHistory(prefs).records
+    expect(records.map(row => row.id)).toEqual(["review-2", structuredRecord().id])
+    // 只有被点开的那一篇带上深读：另一篇、另一条记录都不受影响。
+    expect(records[0].papers[1].deepRead?.summary).toBe("把推理链路压到端侧运行。")
+    expect(records[0].papers[0].deepRead).toBeUndefined()
+    expect(records[1].papers.some(paper => paper.deepRead)).toBe(false)
+  })
+
+  it("restores deep reads by index and keeps the item locators needed to reopen the attachment", () => {
+    const { prefs } = store()
+    appendQuickReviewRecord(prefs, structuredRecord())
+    const [saved] = readQuickReviewHistory(prefs).records
+    saveQuickReviewDeepRead(prefs, saved.id, 1, deepRead())
+    const restored = quickReviewRecordView(readQuickReviewHistory(prefs).records[0])
+    expect([...restored!.deepReads.keys()]).toEqual([1])
+    expect(restored!.deepReads.get(1)).toMatchObject({ score: 72, chars: 320, readPages: 10, sections: [{ heading: "Method", part: "head", page: 2, attachmentID: 101 }] })
+    // 跳页要能对着本机附件做：定位信息随展示用的一起给出，但不进任何请求载荷。
+    expect(restored!.papers[0]).toMatchObject({ index: 1, libraryID: 1, itemKey: "PAPER1" })
+    expect(restored!.deepReads.has(2)).toBe(false)
+  })
+
+  it("refuses to write when the record, the paper or the payload is gone", () => {
+    const { prefs } = store()
+    appendQuickReviewRecord(prefs, structuredRecord())
+    expect(saveQuickReviewDeepRead(prefs, "missing-record", 1, deepRead())).toBe(false)
+    expect(saveQuickReviewDeepRead(prefs, structuredRecord().id, 9, deepRead())).toBe(false)
+    // 全空的返回不算一次深读：写进去只会让历史里多出一张空卡片。
+    expect(saveQuickReviewDeepRead(prefs, structuredRecord().id, 1, deepRead({ summary: "", method: "", evidence: "", reproducibility: "", limitation: "", basis: "", score: undefined }))).toBe(false)
+    expect(readQuickReviewHistory(prefs).records[0].papers.every(paper => !paper.deepRead)).toBe(true)
+  })
+
+  it("salvages a malformed stored deep read instead of inventing sections", () => {
+    const { prefs } = store(JSON.stringify({ version: 1, records: [{
+      ...structuredRecord(),
+      papers: structuredRecord().papers.map((paper, position) => (position === 0 ? {
+        ...paper,
+        deepRead: {
+          ...deepRead(),
+          // 坏页码、坏附件 ID、超出三节的部分都要被剔掉，标题却得照实留着。
+          sections: [
+            { heading: "Method", part: "tail", page: 2, attachmentID: 101 },
+            { heading: "", part: "head", page: 3 },
+            { heading: "Experiments", part: "sideways", page: 0 },
+            { heading: "Conclusion", part: "head", page: 4, attachmentID: -3 },
+            { heading: "Discussion", part: "head", page: 5 },
+          ],
+        },
+      } : paper)),
+    }] }))
+    const restored = quickReviewRecordView(readQuickReviewHistory(prefs).records[0])
+    expect(restored!.deepReads.get(1)?.sections).toEqual([
+      { heading: "Method", part: "tail", page: 2, attachmentID: 101 },
+      { heading: "Conclusion", part: "head", page: 4 },
+      { heading: "Discussion", part: "head", page: 5 },
+    ])
+  })
+
+  it("keeps a deep read whose response could not be parsed so the paid request is not lost", () => {
+    const { prefs } = store()
+    appendQuickReviewRecord(prefs, structuredRecord())
+    const [saved] = readQuickReviewHistory(prefs).records
+    saveQuickReviewDeepRead(prefs, saved.id, 1, deepRead({ summary: "", method: "", evidence: "", reproducibility: "", limitation: "", basis: "", score: undefined, rawText: "模型返回的一段说明文字" }))
+    expect(quickReviewRecordView(readQuickReviewHistory(prefs).records[0])!.deepReads.get(1)?.rawText).toBe("模型返回的一段说明文字")
   })
 })

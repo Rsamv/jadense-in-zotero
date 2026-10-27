@@ -3,13 +3,16 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { TemporaryChatSendInput } from "@/chat/temporary-chat"
 import { RequestExecutionError } from "@/chat/request-feedback"
+import type { DeepReadExcerpt } from "@/chat/review-deep-read"
 import { QUICK_REVIEW_HISTORY_PREF_KEY, quickReviewRecordView, readQuickReviewHistory } from "@/chat/quick-review-history"
 import { saveAutoFollowChatModel, saveByokModel, saveByokProvider, saveFeatureModelSelection } from "./ai-settings"
 import {
   collectReviewRows,
   listReviewCollections,
+  newDeepReadSession,
   newQuickReviewSession,
   quickReviewModelState,
+  runDeepRead,
   runQuickReview,
   selectedReviewCollectionIDs,
   type QuickReviewError,
@@ -362,5 +365,139 @@ describe("quick review with ratings", () => {
     // 序号越界的评价不会在重新打开时凭空多出一篇。
     expect(stored.review.ratings).toHaveLength(1)
     expect(record.review?.evaluated).toBe(true)
+  })
+})
+
+/** 深读送出的正文摘录：字符数与实际片段一致，确认框才报得出真数。 */
+const deepReadExcerpt = (): DeepReadExcerpt => {
+  const sections = [
+    { heading: "Method", part: "head" as const, page: 3, text: "We quantize the attention cache and keep a fused kernel." },
+    { heading: "Conclusion", part: "head" as const, page: 9, text: "Latency drops on one mobile NPU." },
+  ]
+  return { sections, readPages: 10, chars: sections.reduce((total, section) => total + section.text.length, 0) }
+}
+
+const deepReadJSON = JSON.stringify({
+  summary: "把注意力缓存量化后跑在端侧。",
+  method: "摘录：量化加融合核，超参未给。",
+  evidence: "摘录：单款移动 NPU 上的延迟对比。",
+  reproducibility: "摘录：训练设置缺失。",
+  limitation: "摘录：只测了一款芯片。",
+  basis: "摘录：数据为作者自述。",
+  score: 72,
+})
+
+describe("single paper deep read", () => {
+  it("dispatches once with only the bounded excerpt and never touches the batch history", async () => {
+    const { host } = fixture()
+    const send = sendMock(async () => deepReadJSON)
+    const session = newDeepReadSession()
+    const result = await runDeepRead({ zotero: host, title: "Tiny attention", excerpt: deepReadExcerpt(), session, signal: new AbortController().signal, services: { send } })
+    expect(send).toHaveBeenCalledTimes(1)
+    const input = send.mock.calls[0][0]
+    // 与批量综述同一功能标识：深读不新增未审计的计费目的地。
+    expect(input.clientFeature).toBe("analysis")
+    expect(input.conversationId).toBe(session.conversationId)
+    expect(input.clientRequestId).toBe(session.clientRequestId)
+    expect(input.responseFormat?.name).toBe("quick_review_deep_read")
+    expect(input.requireComplete).toBe(true)
+    expect(input.messages).toHaveLength(1)
+    const prompt = input.messages[0].text
+    expect(prompt).toContain("Tiny attention")
+    expect(prompt).toContain("We quantize the attention cache and keep a fused kernel.")
+    expect(prompt).toContain("不得假装读过未送来的部分")
+    expect(prompt).toContain("score 锚点（与批量综述同一把尺子）")
+    expect(prompt).toContain('"readPages":10')
+    expect(result.model).toBe("攻玉")
+    expect(result.read.summary).toBe("把注意力缓存量化后跑在端侧。")
+    expect(result.read.score).toBe(72)
+    expect(result.read.warnings).toEqual([])
+    // 深读由界面按记录 ID 写回那一篇；运行器自己不动历史。
+    expect(readQuickReviewHistory(host.Prefs!).records).toEqual([])
+  })
+
+  it("keeps the BYOK deep read prompt-only with no response-format contract", async () => {
+    const { host } = byokFixture()
+    const send = sendMock(async () => deepReadJSON)
+    await runDeepRead({ zotero: host, title: "Tiny attention", excerpt: deepReadExcerpt(), session: newDeepReadSession(), signal: new AbortController().signal, services: { send } })
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0][0].responseFormat).toBeUndefined()
+    expect(Object.keys(send.mock.calls[0][0]).filter(key => /temperature|top_p|seed|sampling/iu.test(key))).toEqual([])
+  })
+
+  it("never re-dispatches an unconfirmed deep read and rewrites it once after authorization", async () => {
+    const { host } = byokFixture()
+    const send = sendMock(async () => { throw new RequestExecutionError("BYOK 上次执行结果未确认。已有内容保留；请先核对提供商，不会自动重发。", "unknown", "", { code: "BYOK_EXECUTION_UNCONFIRMED" }) })
+    const session = newDeepReadSession()
+    const caught = await runDeepRead({ zotero: host, title: "Tiny attention", excerpt: deepReadExcerpt(), session, signal: new AbortController().signal, services: { send } })
+      .catch((error: QuickReviewError) => error)
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as QuickReviewError).unconfirmed).toBe(true)
+    expect((caught as QuickReviewError).code).toBe("BYOK_EXECUTION_UNCONFIRMED")
+    expect((caught as QuickReviewError).message).toContain("不会自动重发")
+    expect(send).toHaveBeenCalledTimes(1)
+    // 用户显式授权后仍只派发一次，且沿用同一个会话：不产生第二条未确认记录。
+    const authorized = sendMock(async () => deepReadJSON)
+    const done = await runDeepRead({ zotero: host, title: "Tiny attention", excerpt: deepReadExcerpt(), session, signal: new AbortController().signal, allowUnconfirmedRetry: true, services: { send: authorized } })
+    expect(authorized).toHaveBeenCalledTimes(1)
+    expect(authorized.mock.calls[0][0].allowUnconfirmedRetry).toBe(true)
+    expect(authorized.mock.calls[0][0].conversationId).toBe(session.conversationId)
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(done.read.score).toBe(72)
+  })
+
+  it("retains a partial deep read without a second request", async () => {
+    const { host } = byokFixture()
+    const partial = '{"summary":"概述已经完整","method":"方法写到一半'
+    const send = sendMock(async () => { throw new RequestExecutionError("上游流被截断", "partial", partial, { code: "STREAM_INCOMPLETE" }) })
+    const result = await runDeepRead({ zotero: host, title: "Tiny attention", excerpt: deepReadExcerpt(), session: newDeepReadSession(), signal: new AbortController().signal, services: { send } })
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(result.unconfirmed).toBeUndefined()
+    // 已计费的一次请求不能只剩一句"解析失败"：原文留在 rawText 里供阅读。
+    expect(result.read.warnings[0]).toContain("深读未完整结束")
+    expect(result.read.warnings[0]).toContain("连接中断")
+    expect(result.read.rawText).toContain("概述已经完整")
+  })
+
+  it("projects a failed deep read through the error whitelist without echoing credentials", async () => {
+    const { host } = byokFixture()
+    const send = sendMock(async () => { throw Object.assign(new Error("BYOK 请求失败（401）。"), { status: 401, code: "AUTH", apiKey: "sk-fixture-secret" }) })
+    const caught = await runDeepRead({ zotero: host, title: "Tiny attention", excerpt: deepReadExcerpt(), session: newDeepReadSession(), signal: new AbortController().signal, services: { send } })
+      .catch((error: QuickReviewError) => error)
+    expect((caught as QuickReviewError).message).toContain("连接或权限问题")
+    expect((caught as QuickReviewError).message).not.toContain("sk-fixture-secret")
+    expect((caught as QuickReviewError).unconfirmed).toBeUndefined()
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
+  it("stops before any request when the model target is not configured", async () => {
+    const { host } = fixture()
+    host.Prefs!.clear("extensions.jadenseInZotero.token")
+    saveAutoFollowChatModel(host, false)
+    saveFeatureModelSelection(host, "analysis", { route: "byok", modelId: "removed-model" })
+    const send = sendMock(async () => deepReadJSON)
+    const caught = await runDeepRead({ zotero: host, title: "Tiny attention", excerpt: deepReadExcerpt(), session: newDeepReadSession(), signal: new AbortController().signal, services: { send } })
+      .catch((error: QuickReviewError) => error)
+    expect((caught as QuickReviewError).code).toBe("AI_NOT_CONFIGURED")
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it("throttles the received-character progress and survives a broken progress listener", async () => {
+    const { host } = byokFixture()
+    const messages: string[] = []
+    const send = sendMock(async input => {
+      input.onProgress?.({ stage: "receiving", receivedCharacters: 90 })
+      input.onProgress?.({ stage: "receiving", receivedCharacters: 140 })
+      return deepReadJSON
+    })
+    await runDeepRead({ zotero: host, title: "Tiny attention", excerpt: deepReadExcerpt(), session: newDeepReadSession(), signal: new AbortController().signal, onProgress: message => { messages.push(message) }, services: { send } })
+    expect(messages.some(message => message.includes("已收到 90 字"))).toBe(true)
+    expect(messages.some(message => message.includes("140"))).toBe(false)
+    const noisy = sendMock(async () => deepReadJSON)
+    const done = await runDeepRead({
+      zotero: host, title: "Tiny attention", excerpt: deepReadExcerpt(), session: newDeepReadSession(), signal: new AbortController().signal,
+      onProgress: () => { throw new Error("ui unavailable") }, services: { send: noisy },
+    })
+    expect(done.read.summary).toBe("把注意力缓存量化后跑在端侧。")
   })
 })
