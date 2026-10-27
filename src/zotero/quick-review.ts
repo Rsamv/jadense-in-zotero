@@ -280,7 +280,7 @@ export async function runQuickReview(input: {
     model: model.label,
     papers: papers.map(paper => ({
       libraryID: paper.libraryID, itemKey: paper.itemKey, title: paper.title, authors: paper.authors, year: paper.year, publication: paper.publication,
-      index: paper.index, abstractState: paper.abstractState, links: paper.links,
+      index: paper.index, abstractState: paper.abstractState, links: paper.links, appendix: paper.appendix,
     })),
     overview: result.overview,
     notes: text,

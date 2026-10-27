@@ -72,6 +72,7 @@
 .jdx-review-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; }
 .jdx-review-links-label { font-size: 11px; color: var(--jdx-muted, #66766d); }
 .jdx-review-link { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; line-height: 1.5; padding: 1px 6px; border: 1px solid var(--jdx-line-strong); border-radius: 6px; background: var(--jdx-sidebar); overflow-wrap: anywhere; user-select: text; }
+.jdx-review-appendix-item { font-size: 11px; line-height: 1.5; padding: 1px 6px; border: 1px solid var(--jdx-line-strong); border-radius: 6px; background: var(--jdx-sidebar); overflow-wrap: anywhere; user-select: text; }
 .jdx-review-table-scroll { overflow-x: auto; border: 1px solid var(--jdx-line-strong); border-radius: 8px; }
 .jdx-review-result table { width: 100%; border-collapse: collapse; text-align: left; min-width: 420px; }
 .jdx-review-result th { position: sticky; top: 0; background: var(--jdx-sidebar); white-space: nowrap; }

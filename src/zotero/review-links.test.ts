@@ -1,21 +1,27 @@
-/** 附件链接扫描的边界：只读首尾页、只外传链接文本、解析器缺失时不阻塞综述。 */
+/** 附件扫描的边界：只读首尾页、只外传链接文本与附录标题、跳过的篇数要说得出原因、环境缺件时不标记已扫。 */
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ReviewPaperRow } from '@/chat/quick-review'
-import { scanRowsForAttachmentLinks } from './review-links'
+import { quickReviewScanNotice, scanRowsForAttachmentLinks } from './review-links'
 import { initializeUiLocale } from './ui-preferences'
 import type { ZoteroLike } from './runtime'
 
 const state = vi.hoisted(() => ({ getDocument: vi.fn(), loaded: 0, rejects: false, pages: [] as number[] }))
 
-/** 五页样例：尾页三页（3/4/5）加首页才是该读的，第 2 页一次都不该被取。 */
-const EDGE_PAGES = [1, 3, 4, 5]
+/** 十页样例：首页加末尾六页才是该读的，正文第 2/3/4 页一次都不该被取。 */
+const EDGE_PAGES = [1, 5, 6, 7, 8, 9, 10]
 const PAGE_TEXT: Record<number, string> = {
-  1: 'Project page at https://yushi-du.github.io/COLA/ with demos.',
+  1: 'Project page at https://yushi-du.github.io/COLA/ with demos. Our project website is available at https://\nexpressive-humanoid.github.io.',
+  2: 'Body prose without any address here.',
   3: 'Body prose without any address here.',
-  4: 'A results table with no link.',
-  5: 'Code: https://github.com/tiny/attn. Data availability: https://zenodo.org/records/1234.',
+  4: 'Body prose without any address here.',
+  5: 'A results table with no link.',
+  6: 'Code: https://github.com/tiny/attn.',
+  7: 'Reference https://doi.org/10.1145/3197517.3201311 is not a code link.',
+  8: 'Robot hardware page https://www.unitree.com/h1.',
+  9: 'Appendix marker belongs to the next page.',
+  10: 'Appendix\nA. Motion Dataset Selection\nWe collect 40 hours of data.\nB. Additional Training Details\nData availability: https://zenodo.org/records/1234.',
 }
 
 vi.mock('./pdf-module', async importActual => ({
@@ -29,7 +35,7 @@ vi.mock('./pdf-module', async importActual => ({
         state.getDocument(input)
         return {
           promise: Promise.resolve({
-            numPages: 5,
+            numPages: 10,
             getPage: async (page: number) => {
               state.pages.push(page)
               return {
@@ -84,18 +90,22 @@ afterEach(() => {
 const pdfHost = hostFixture({ 101: pdfAttachment('C:/tmp/one.pdf'), 102: pdfAttachment('C:/tmp/two.pdf') })
 
 describe('attachment link scanning', () => {
-  it('keeps only the link text from the first and last pages', async () => {
+  it('keeps only the link text and appendix titles from the first and last pages', async () => {
     const scanned = await scanRowsForAttachmentLinks({ doc: document, host: pdfHost, rows: [row('PAPER1', ['https://github.com/tiny/attn'])] })
     // 首尾页之外的页面一次都不该被读取。
     expect(state.pages).toEqual(EDGE_PAGES)
     expect(scanned.rows[0].links).toEqual([
       'https://github.com/tiny/attn',
       'https://yushi-du.github.io/COLA/',
+      'https://expressive-humanoid.github.io',
       'https://zenodo.org/records/1234',
     ])
+    // 附录只带出小节标题；正文里那句 40 小时的数据描述不外发。
+    expect(scanned.rows[0].appendix).toEqual(['A. Motion Dataset Selection', 'B. Additional Training Details'])
     expect(scanned.rows[0].attachmentScanned).toBe(true)
-    expect(scanned).toMatchObject({ scanned: 1, found: 1, failed: 0 })
+    expect(scanned).toMatchObject({ scanned: 1, parsed: 1, found: 1, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false })
     expect(JSON.stringify(scanned.rows)).not.toContain('Body prose')
+    expect(JSON.stringify(scanned.rows)).not.toContain('40 hours')
   })
 
   it('marks every scanned row once and never re-reads the batch', async () => {
@@ -124,28 +134,42 @@ describe('attachment link scanning', () => {
     expect(scanned.rows[1].attachmentScanned).toBeUndefined()
   })
 
-  it('ignores non-PDF attachments and files that are too large', async () => {
+  it('ignores non-PDF attachments and reports the ones that are too large', async () => {
     const skipped = hostFixture({ 101: pdfAttachment('C:/tmp/one.pdf', false), 102: pdfAttachment('C:/tmp/two.pdf') })
     const notPdf = await scanRowsForAttachmentLinks({ doc: document, host: skipped, rows: [row('PAPER1')] })
     expect(notPdf.rows[0].links).toEqual([])
     expect(state.getDocument).not.toHaveBeenCalled()
 
-    io(() => new Uint8Array(20_000_001))
+    // 会议论文的带附录 PDF 常见 25～50 MB：这类必须真扫，不能静默跳过。
+    io(() => new Uint8Array(22_000_000))
+    const midSized = await scanRowsForAttachmentLinks({ doc: document, host: pdfHost, rows: [row('PAPER1')] })
+    expect(midSized).toMatchObject({ parsed: 1, oversize: 0 })
+    expect(state.getDocument).toHaveBeenCalledTimes(1)
+
+    io(() => new Uint8Array(60_000_001))
+    state.getDocument.mockClear()
     const tooBig = await scanRowsForAttachmentLinks({ doc: document, host: pdfHost, rows: [row('PAPER1')] })
     expect(tooBig.rows[0].attachmentScanned).toBe(true)
+    expect(tooBig).toMatchObject({ parsed: 0, oversize: 1, unreadable: 0 })
     expect(state.getDocument).not.toHaveBeenCalled()
+    // 跳过要说得出原因：否则用户会把"没扫到"读成"论文没有链接"。
+    expect(quickReviewScanNotice(tooBig)).toContain('附件扫描跳过 1 篇（超过 60 MB：1 篇')
   })
 
-  it('still finishes the review when the parser or the file reader is unavailable', async () => {
+  it('leaves the rows unscanned when the parser or the file reader is unavailable', async () => {
     state.rejects = true
     const noParser = await scanRowsForAttachmentLinks({ doc: document, host: pdfHost, rows: [row('PAPER1')], onProgress: () => {} })
-    expect(noParser.rows[0]).toMatchObject({ attachmentScanned: true, links: [] })
+    // 一条都没查的行不能带已扫描标记：下次生成还要能重试。
+    expect(noParser.rows[0].attachmentScanned).toBeUndefined()
+    expect(noParser).toMatchObject({ scanned: 0, parserMissing: true })
+    expect(quickReviewScanNotice(noParser)).toContain('本机未能加载 PDF 解析模块')
 
     delete (globalThis as typeof globalThis & { IOUtils?: unknown }).IOUtils
     state.rejects = false
     const noIO = await scanRowsForAttachmentLinks({ doc: document, host: pdfHost, rows: [row('PAPER1')] })
-    expect(noIO).toMatchObject({ scanned: 1, found: 0, failed: 0 })
-    expect(noIO.rows[0].attachmentScanned).toBe(true)
+    expect(noIO).toMatchObject({ scanned: 0, parsed: 0, readerMissing: true })
+    expect(noIO.rows[0].attachmentScanned).toBeUndefined()
+    expect(quickReviewScanNotice(noIO)).toContain('缺少附件读取能力')
   })
 
   it('treats a broken library item as one paper without links', async () => {
@@ -153,7 +177,7 @@ describe('attachment link scanning', () => {
       Items: { getByLibraryAndKey: () => { throw new Error('gone') }, get: () => null },
     } as unknown as ZoteroLike
     const scanned = await scanRowsForAttachmentLinks({ doc: document, host: broken, rows: [row('PAPER1')] })
-    expect(scanned).toMatchObject({ scanned: 1, found: 0 })
+    expect(scanned).toMatchObject({ scanned: 1, found: 0, parsed: 0 })
     expect(scanned.rows[0].attachmentScanned).toBe(true)
   })
 })

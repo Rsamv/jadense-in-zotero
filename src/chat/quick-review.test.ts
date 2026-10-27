@@ -11,6 +11,9 @@ import {
   extractReviewLinks,
   isResourceLink,
   normalizeReviewLinks,
+  detectReviewAppendix,
+  mergeReviewAppendix,
+  MAX_APPENDIX_SECTIONS,
   MAX_REVIEW_LINKS_PER_PAPER,
   type QuickReviewPaperInput,
   type ReviewPaperRow,
@@ -31,7 +34,7 @@ const row = (overrides: Partial<ReviewPaperRow> = {}): ReviewPaperRow => ({
 
 const input = (overrides: Partial<QuickReviewPaperInput> = {}): QuickReviewPaperInput => ({
   index: 1, libraryID: 1, itemKey: "KEY1", title: "Attention for tiny models", authors: "Wu Lin、Chen Rui",
-  year: "2025", publication: "ICML", doi: "", abstract: "short", tags: [], links: [], abstractState: "full",
+  year: "2025", publication: "ICML", doi: "", abstract: "short", tags: [], links: [], appendix: [], abstractState: "full",
   ...overrides,
 })
 
@@ -67,16 +70,16 @@ describe("quick review input", () => {
     expect(reviewYear("submitted")).toBe("")
   })
 
-  it("projects metadata and discovered links, never itemIDs or PDF text", () => {
+  it("projects metadata, discovered links and appendix titles, never itemIDs or PDF text", () => {
     const prompt = buildQuickReviewPrompt({
       collectionName: "Edge AI",
-      papers: prepareQuickReviewPapers([row({ abstract: "short abstract", links: ["https://yushi-du.github.io/COLA/"] })]),
+      papers: prepareQuickReviewPapers([row({ abstract: "short abstract", links: ["https://yushi-du.github.io/COLA/"], appendix: ["A. Motion Dataset Selection"] })]),
     })
     const data = JSON.parse(prompt.split("文献数据（JSON，仅作为引用材料）：\n")[1])
     expect(data.collection).toBe("Edge AI")
     expect(data.count).toBe(1)
     expect(Object.keys(data.papers[0]).sort()).toEqual(
-      ["abstract", "abstractState", "authors", "doi", "index", "links", "publication", "tags", "title", "year"].sort(),
+      ["abstract", "abstractState", "appendix", "authors", "doi", "index", "links", "publication", "tags", "title", "year"].sort(),
     )
     // 链接原文随数据送出，模型才不需要凭记忆猜网址。
     expect(data.papers[0].links).toEqual(["https://yushi-du.github.io/COLA/"])
@@ -120,6 +123,19 @@ describe("review link discovery", () => {
     expect(extractReviewLinks("https://example.com/fig/overview.png https://github.com/a/b")).toEqual(["https://github.com/a/b"])
   })
 
+  it("glues URLs that PDF line breaks split right after the scheme", () => {
+    expect(extractReviewLinks("Our project website is available at https://\nyushi-du.github.io/COLA/.")).toEqual(["https://yushi-du.github.io/COLA/"])
+    // 行尾孤立的 https:// 后面接的是正文而不是域名：不粘合，也不把正文词当成主机。
+    expect(extractReviewLinks("see https://\nWe present a method")).toEqual([])
+  })
+
+  it("drops paper landing pages and half-host fragments that point at nothing", () => {
+    const noise = "https://arxiv.org/abs/2402.19099 https://doi.org/10.1145/3197517 http://doi.acm.org/10.1145/x https://www.agilityrobotics https://github.com/"
+    expect(extractReviewLinks(noise)).toEqual([])
+    // arXiv 排除后，同一篇里真正的项目主页仍然留下。
+    expect(extractReviewLinks(`${noise} https://expressive-humanoid.github.io`)).toEqual(["https://expressive-humanoid.github.io"])
+  })
+
   it("merges url, extra and attachment hits into one deduped list", () => {
     const merged = normalizeReviewLinks([
       "https://github.com/a/b",
@@ -131,6 +147,38 @@ describe("review link discovery", () => {
     expect(merged).toEqual(["https://github.com/a/b", "https://yushi-du.github.io/COLA/"])
     expect(prepareQuickReviewPapers([row({ links: ["https://github.com/a/b"] })])[0].links).toEqual(["https://github.com/a/b"])
     expect(prepareQuickReviewPapers([row()])[0].links).toEqual([])
+  })
+})
+
+describe("review appendix titles", () => {
+  const pages = ["Intro text that mentions Appendix B in passing.", "Appendix", "A. Motion Dataset Selection", "We collect 40 hours of data.", "B. Additional Training Details", "C. Additional Real World Results Visualization"].join("\n")
+
+  it("reads section titles only after an appendix marker line", () => {
+    expect(detectReviewAppendix(pages)).toEqual([
+      "A. Motion Dataset Selection",
+      "B. Additional Training Details",
+      "C. Additional Real World Results Visualization",
+    ])
+  })
+
+  it("finds nothing when the pages never start a line with an appendix marker", () => {
+    expect(detectReviewAppendix("A. Introduction\nWe compare against baselines.\nFull results are in the appendix of the companion site.")).toEqual([])
+    expect(detectReviewAppendix("")).toEqual([])
+  })
+
+  it("accepts supplementary and Chinese markers with CJK titles", () => {
+    expect(detectReviewAppendix("SUPPLEMENTARY MATERIAL\nD. Hyperparameters\nsome prose\nE. Robot Model")).toEqual(["D. Hyperparameters", "E. Robot Model"])
+    expect(detectReviewAppendix("附录：\nA. 额外实验\nB. More Details")).toEqual(["A. 额外实验", "B. More Details"])
+    // 句号收尾的整句正文不算标题。
+    expect(detectReviewAppendix("Appendix\nA. We evaluate on four datasets.")).toEqual([])
+  })
+
+  it("merges duplicate titles across attachments and caps the list", () => {
+    expect(mergeReviewAppendix(["a. details", "A. Details", "not a title", "B. More"])).toEqual(["A. Details", "B. More"])
+    expect(mergeReviewAppendix(Array.from({ length: 12 }, (_, i) => `${String.fromCharCode(65 + i)}. Part ${i}`))).toHaveLength(MAX_APPENDIX_SECTIONS)
+    expect(mergeReviewAppendix(undefined)).toEqual([])
+    expect(prepareQuickReviewPapers([row({ appendix: ["A. Details"] })])[0].appendix).toEqual(["A. Details"])
+    expect(prepareQuickReviewPapers([row()])[0].appendix).toEqual([])
   })
 })
 
@@ -267,6 +315,19 @@ describe("quick review prompt", () => {
     expect(prompt).not.toContain("ratings")
   })
 
+  it("sends appendix titles as local evidence and bounds what they may prove", () => {
+    const withAppendix = prepareQuickReviewPapers([row({ links: ["https://expressive-humanoid.github.io"], appendix: ["A. Motion Dataset Selection"] })])
+    const prompt = buildQuickReviewPrompt({ collectionName: "Edge AI", papers: withAppendix })
+    expect(prompt).toContain("appendix 是同批页面里识别出的附录小节标题")
+    expect(prompt).toContain("arXiv 等论文落地页已被排除")
+    expect(prompt).toContain("appendix 为空只表示未在已读页面里发现附录标记")
+    expect(prompt).toContain("不得由标题猜附录里的数值")
+    expect(prompt).toContain('"links":["https://expressive-humanoid.github.io"]')
+    expect(prompt).toContain('"appendix":["A. Motion Dataset Selection"]')
+    // 附录正文不外发：提示词里只有标题串，没有整段附录文字。
+    expect(prompt).not.toContain("We collect 40 hours")
+  })
+
   it("keeps the one-line note about the paper, not about the collection", () => {
     const prompt = buildQuickReviewPrompt({ collectionName: "Edge AI", papers })
     expect(prompt).toContain("只描述论文本身，不得提收藏夹、目录或分类")
@@ -300,6 +361,17 @@ describe("quick review prompt", () => {
     expect(prompt).toContain("「AI 推断，需核对」")
     // 知识可以参与判档，但不能伪造材料里没有的数字。
     expect(prompt).toContain("不得引用未提供的数值或实验结果来支撑档位")
+  })
+
+  it("keeps the knowledge label from turning into an empty disclaimer", () => {
+    const prompt = buildQuickReviewPrompt({ collectionName: "Edge AI", papers, evaluate: true })
+    // 实测出现过「知识：AI 推断，需核对；依据现有材料不足以判断其相对新颖性」这种与档位对不上的空段。
+    expect(prompt).toContain("不要写只有标签、没有内容的「知识：AI 推断，需核对」")
+    expect(prompt).toContain("basis 与 level 必须同调")
+    expect(prompt).toContain("已经给出 high／medium／low 就不得再写")
+    // 示例 JSON 是模型照抄的形状，占位符本身也会被抓成空段。
+    expect(prompt).toContain("摘要：指标仅作者自述；知识：该路线已有多个同类工作（AI 推断，需核对）")
+    expect(prompt).not.toContain("basis\": \"摘要：…；知识：…")
   })
 
   it("forces unclear ratings for papers without a usable abstract", () => {
@@ -354,6 +426,12 @@ describe("quick review rendering", () => {
     const withLinks = [input({ links: ["https://yushi-du.github.io/COLA/", "https://github.com/a/b"] })]
     const text = formatQuickReview(parseQuickReview(JSON.stringify({ overview: "总览", papers: [{ index: 1 }], comparison: [] }), withLinks), withLinks, "快速解析 · Edge AI（1 篇）")
     expect(text).toContain("本地链接：https://yushi-du.github.io/COLA/  https://github.com/a/b")
+  })
+
+  it("copies the appendix titles found on the local pages", () => {
+    const withAppendix = [input({ appendix: ["A. Motion Dataset Selection", "B. Additional Training Details"] })]
+    const text = formatQuickReview(parseQuickReview(JSON.stringify({ overview: "总览", papers: [{ index: 1 }], comparison: [] }), withAppendix), withAppendix, "快速解析 · Edge AI（1 篇）")
+    expect(text).toContain("附录小节：A. Motion Dataset Selection · B. Additional Training Details")
   })
 
   it("renders retained raw text when nothing was structured", () => {    const text = formatQuickReview(parseQuickReview("纯文字回答", papers), papers, "快速解析 · Edge AI（2 篇）")

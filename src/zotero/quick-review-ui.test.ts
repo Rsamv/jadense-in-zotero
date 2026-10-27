@@ -17,8 +17,11 @@ vi.mock('./quick-review', async importActual => ({
   ...(await importActual<typeof import('./quick-review')>()),
   runQuickReview: (input: unknown) => state.run(input),
 }))
-// 附件扫描要读 pdf.js 与磁盘，jsdom 里两者都不存在：换成可控桩，只验证界面何时调用、拿到什么。
-vi.mock('./review-links', () => ({ scanRowsForAttachmentLinks: (input: unknown) => state.scan(input) }))
+// 附件扫描要读 pdf.js 与磁盘，jsdom 里两者都不存在：只换掉扫描本身，回执文案沿用真实实现。
+vi.mock('./review-links', async importActual => ({
+  ...(await importActual<typeof import('./review-links')>()),
+  scanRowsForAttachmentLinks: (input: unknown) => state.scan(input),
+}))
 
 // jsdom 不给 createElementNS 生成的 <dialog> 提供模态 API；按 Gecko 语义用 open 属性补齐开合与 close 事件。
 const dialogShell = HTMLElement.prototype as HTMLElement & { showModal?: () => void; close?: (value?: string) => void }
@@ -83,6 +86,9 @@ const outcome = (rows: ReviewPaperRow[], evaluate = false): QuickReviewRunResult
 
 const flush = async () => { for (let step = 0; step < 12; step += 1) await Promise.resolve(); await new Promise(resolve => setTimeout(resolve, 0)) }
 const click = async (node: Element | undefined) => { (node as HTMLButtonElement | undefined)?.click(); await flush() }
+const statusText = (root: Element) => root.querySelector('.jdx-manager-inline-status')?.textContent ?? ''
+/** 扫描概况与勾选预算共用同一个类名：断言时把两段都拼上。 */
+const scanLines = (root: Element) => [...root.querySelectorAll('.jdx-review-scan')].map(node => node.textContent).join(' ')
 
 function mount(count: number, options: { evaluatePref?: boolean; scanPref?: boolean } = {}) {
   const { host, values } = fixture(count)
@@ -90,7 +96,10 @@ function mount(count: number, options: { evaluatePref?: boolean; scanPref?: bool
   if (options.scanPref === false) values.set(SCAN_PREF_KEY, false)
   state.run.mockImplementation(async (input: { rows: ReviewPaperRow[]; evaluate?: boolean }) => outcome(input.rows, input.evaluate === true))
   // 默认按"扫描没找到链接"返回：行为与原行一致，只有 attachmentScanned 标记被点亮。
-  state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({ rows: rows.map(row => ({ ...row, attachmentScanned: true })), scanned: rows.length, found: 0, failed: 0 }))
+  state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
+    rows: rows.map(row => ({ ...row, attachmentScanned: true })),
+    scanned: rows.length, parsed: rows.length, found: 0, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false,
+  }))
   const review = mountQuickReview(document, host, vi.fn())
   const root = document.querySelector<HTMLElement>('#jadense-quick-review-dialog')!
   const labeled = (text: string) => [...root.querySelectorAll('button')].find(button => button.textContent?.includes(text))
@@ -226,7 +235,7 @@ it('reads attachment links once per batch and shows only the link text', async (
     onProgress?.('正在扫描附件里的开源链接 · 1/3')
     return {
       rows: rows.map((row, position) => ({ ...row, links: [...(row.links ?? []), ...(position === 0 ? ['https://github.com/tiny/attn'] : [])], attachmentScanned: true })),
-      scanned: rows.length, found: 1, failed: 0,
+      scanned: rows.length, parsed: rows.length, found: 1, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false,
     }
   })
   await review.open([1])
@@ -246,6 +255,58 @@ it('reads attachment links once per batch and shows only the link text', async (
   expect(state.run).toHaveBeenCalledTimes(2)
   expect(state.run.mock.calls[1][0].rows.map((row: ReviewPaperRow) => row.itemKey)).toEqual(['K1', 'K3'])
   expect(state.run.mock.calls[1][0].rows[0].links).toEqual(['https://github.com/tiny/attn'])
+  review.dispose()
+})
+
+it('keeps the tick icons in step with select all and clear selection', async () => {
+  const { review, root, labeled } = mount(3)
+  await review.open([1])
+  const boxes = () => [...root.querySelectorAll<HTMLInputElement>('.jdx-review-papers input[type="checkbox"]')]
+  expect(boxes().map(node => node.checked)).toEqual([true, true, true])
+  await click(labeled('全不选'))
+  // 提示说发 0 篇，图标就必须全空：否则用户会以为勾还在。
+  expect(boxes().map(node => node.checked)).toEqual([false, false, false])
+  expect(scanLines(root)).toContain('未勾选任何文献')
+  expect(labeled('生成综述')?.disabled).toBe(true)
+  await click(labeled('全选'))
+  expect(boxes().map(node => node.checked)).toEqual([true, true, true])
+  expect(scanLines(root)).toContain('本次发送 3 篇')
+  expect(labeled('生成综述')?.disabled).toBe(false)
+  review.dispose()
+})
+
+it('shows appendix titles from the local pages without wiping the user tick marks', async () => {
+  const { review, root, labeled } = mount(3)
+  state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
+    rows: rows.map((row, position) => position === 0
+      ? { ...row, links: ['https://expressive-humanoid.github.io'], appendix: ['A. Motion Dataset Selection', 'B. Additional Training Details'], attachmentScanned: true }
+      : { ...row, attachmentScanned: true }),
+    scanned: rows.length, parsed: rows.length - 1, found: 1, oversize: 1, unreadable: 0, parserMissing: false, readerMissing: false,
+  }))
+  await review.open([1])
+  const boxes = () => [...root.querySelectorAll<HTMLInputElement>('.jdx-review-papers input[type="checkbox"]')]
+  boxes()[2].checked = false; boxes()[2].dispatchEvent(new Event('change'))
+  await click(labeled('生成综述'))
+  // 扫描回填会重画清单：徽章补上附录小节，用户取消的勾选必须原样保留。
+  expect([...root.querySelectorAll('.jdx-review-paper-row .jdx-review-badge')].map(node => node.textContent)).toContain('附录 2 节')
+  expect(boxes()[2].checked).toBe(false)
+  expect([...root.querySelectorAll('.jdx-review-appendix-item')].map(node => node.textContent))
+    .toEqual(['A. Motion Dataset Selection', 'B. Additional Training Details'])
+  // 跳过的篇数在结果之后仍然可见：不然"没扫到链接"会被读成"论文没有链接"。
+  expect(statusText(root)).toContain('附件扫描跳过 1 篇')
+  review.dispose()
+})
+
+it('says so when the local PDF parser never loads', async () => {
+  const { review, root, labeled } = mount(3)
+  state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
+    rows: [...rows], scanned: 0, parsed: 0, found: 0, oversize: 0, unreadable: 0, parserMissing: true, readerMissing: false,
+  }))
+  await review.open([1])
+  await click(labeled('生成综述'))
+  expect(statusText(root)).toContain('本机未能加载 PDF 解析模块')
+  // 解析器没起来时不得把行标记成已扫描：下次生成还要能重试。
+  expect(state.run.mock.calls[0][0].rows.every((row: ReviewPaperRow) => !row.attachmentScanned)).toBe(true)
   review.dispose()
 })
 

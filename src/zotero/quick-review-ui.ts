@@ -33,7 +33,7 @@ import {
   type QuickReviewSession,
   type ReviewCollection,
 } from './quick-review'
-import { scanRowsForAttachmentLinks } from './review-links'
+import { quickReviewScanNotice, scanRowsForAttachmentLinks } from './review-links'
 
 const MAX_VISIBLE_ROWS = 200
 const EVALUATE_PREF_KEY = 'extensions.jadenseInZotero.quickReviewEvaluate'
@@ -146,14 +146,25 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
         : uiText(`本次发送 ${send} 篇；摘要过长时会自动压缩。`, `${send} papers will be sent. Long abstracts are compressed automatically.`)
   }
 
-  const renderRows = () => {
+  /** 勾选状态只认 included：批量选择时重画图标，否则提示说发 0 篇而清单仍全是勾。 */
+  const syncChecks = () => {
+    for (const label of Array.from(paperList.querySelectorAll<HTMLElement>('label[data-key]'))) {
+      const input = label.querySelector<HTMLInputElement>('input[type="checkbox"]')
+      if (input) input.checked = included.has(label.dataset.key ?? '')
+    }
+  }
+
+  /** keepSelection 用于扫描回填：清单要补上徽章，但用户在计费前取消的勾选不能被抹掉。 */
+  const renderRows = (keepSelection = false) => {
     paperList.replaceChildren()
-    included.clear()
     const visible = rows.slice(0, MAX_VISIBLE_ROWS)
-    visible.forEach(row => included.add(rowKey(row)))
+    if (!keepSelection) {
+      included.clear()
+      visible.forEach(row => included.add(rowKey(row)))
+    }
     for (const row of visible) {
-      const label = make('label', '', 'jdx-review-paper-row')
-      const input = make('input'); input.type = 'checkbox'; input.checked = true
+      const label = make('label', '', 'jdx-review-paper-row'); label.dataset.key = rowKey(row)
+      const input = make('input'); input.type = 'checkbox'; input.checked = included.has(rowKey(row))
       input.setAttribute('aria-label', row.title)
       input.addEventListener('change', () => { if (input.checked) included.add(rowKey(row)); else included.delete(rowKey(row)); renderBudget(); updateActions() })
       const text = make('span', '', 'jdx-review-paper-text')
@@ -161,7 +172,8 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
       const meta = [row.creators.map(creator => creator.name).filter(Boolean).join('、'), row.date?.slice(0, 4), row.publicationTitle].filter(Boolean).join(' · ')
       if (meta) text.append(make('small', meta))
       if (!String(row.abstract ?? '').trim()) text.append(make('em', uiText('无摘要', 'no abstract'), 'jdx-review-badge'))
-      else if (row.links?.length) text.append(make('em', uiText(`本机发现 ${row.links.length} 条链接`, `${row.links.length} link(s) found locally`), 'jdx-review-badge'))
+      if (row.links?.length) text.append(make('em', uiText(`本机发现 ${row.links.length} 条链接`, `${row.links.length} link(s) found locally`), 'jdx-review-badge'))
+      if (row.appendix?.length) text.append(make('em', uiText(`附录 ${row.appendix.length} 节`, `${row.appendix.length} appendix section(s)`), 'jdx-review-badge'))
       label.append(input, text); paperList.append(label)
     }
     if (rows.length > visible.length) paperList.append(make('p', uiText(`收藏夹内还有 ${rows.length - visible.length} 篇未列出；请先在 Zotero 中拆分收藏夹。`, `${rows.length - visible.length} further papers are hidden. Split the collection in Zotero first.`)))
@@ -211,12 +223,20 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     for (const link of links) row.append(make('code', link, 'jdx-review-link'))
     return row
   }
+  /** 附录标题同样只是本机证据：只说明这篇有附录、大致分几节，不代表读过附录内容。 */
+  const appendixRow = (titles: string[]) => {
+    const row = make('div', '', 'jdx-review-links')
+    row.append(make('span', uiText('附录小节', 'Appendix sections'), 'jdx-review-links-label'))
+    for (const title of titles) row.append(make('span', title, 'jdx-review-appendix-item'))
+    return row
+  }
   const paperCard = (paper: QuickReviewDisplayPaper, note: QuickReviewResult['papers'][number] | undefined) => {
     const card = make('div', '', 'jdx-review-card')
     card.append(make('h4', `${paper.index}. ${paper.title}`))
     const meta = [paper.authors, paper.year, paper.publication].filter(Boolean).join(' · ')
     if (meta) card.append(make('p', meta, 'jdx-review-card-meta'))
     if (paper.links?.length) card.append(linksRow(paper.links))
+    if (paper.appendix?.length) card.append(appendixRow(paper.appendix))
     if (!note) {
       card.append(fieldsBlock([], [uiText('状态', 'Status'), uiText('模型未覆盖本篇。', 'The model did not cover this paper.')]))
       return card
@@ -377,23 +397,29 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     controller = new AbortController()
     busy = true; updateActions()
     let reviewed = papers
+    let scanNotice = ''
     try {
       // 扫描每批只做一次：授权重发沿用同一批已带链接的行，既不重复读盘也不重复计费。
       if (scanPick.checked && papers.some(row => !row.attachmentScanned)) {
-        reviewed = (await scanRowsForAttachmentLinks({ doc, host, rows: papers, signal: controller.signal, onProgress: message => { status.textContent = message } })).rows
-        // 发现的链接按行合并回列表：再点一次「生成综述」不必重读附件。
-        // 这里不重画清单——renderRows 会把可见行全部勾上，用户在计费前取消的勾选不能被抹掉。
+        const report = await scanRowsForAttachmentLinks({ doc, host, rows: papers, signal: controller.signal, onProgress: message => { status.textContent = message } })
+        reviewed = report.rows
+        // 发现的链接与附录按行合并回清单：再点一次「生成综述」不必重读附件。
         if (reviewed !== papers) {
-          const scanned = new Map(reviewed.map(row => [rowKey(row), row]))
-          rows = rows.map(row => scanned.get(rowKey(row)) ?? row)
+          const byKey = new Map(reviewed.map(row => [rowKey(row), row]))
+          rows = rows.map(row => byKey.get(rowKey(row)) ?? row)
+          // 保留勾选重画：只补徽章，用户在计费前取消的勾不能被抹掉。
+          renderRows(true)
         }
+        scanNotice = quickReviewScanNotice(report)
       }
       const outcome = await runQuickReview({ zotero: host, collection, rows: reviewed, session: localSession, signal: controller.signal, ...(allowUnconfirmedRetry ? { allowUnconfirmedRetry: true } : {}), ...(evaluate ? { evaluate: true } : {}), onProgress: message => { status.textContent = message } })
       view = outcome
       paintResult(outcome.result, outcome.papers)
-      status.textContent = outcome.historySaved
+      const finished = outcome.historySaved
         ? uiText('综述已完成并写入本机历史。', 'Review finished and saved in local history.')
         : outcome.historyError ?? ''
+      // 扫描跳过要在结果之后仍看得见：否则用户会把"没扫到链接"读成"论文没有链接"。
+      status.textContent = scanNotice ? `${finished} ${scanNotice}`.trim() : finished
       renderHistory()
       return outcome
     } catch (error) {
@@ -452,8 +478,8 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
   picker.append(sectionTitle(uiText('收藏夹（含子收藏夹）', 'Collection with sub-collections')), collectionPick.element, scanSummary)
   const listSection = make('section', '', 'jdx-review-list')
   listTools.append(
-    button(uiText('全选', 'Select all'), () => { for (const row of rows.slice(0, MAX_VISIBLE_ROWS)) included.add(rowKey(row)); renderRows() }),
-    button(uiText('全不选', 'Clear selection'), () => { rows.slice(0, MAX_VISIBLE_ROWS).forEach(row => included.delete(rowKey(row))); renderBudget(); updateActions() }),
+    button(uiText('全选', 'Select all'), () => { for (const row of rows.slice(0, MAX_VISIBLE_ROWS)) included.add(rowKey(row)); syncChecks(); renderBudget(); updateActions() }),
+    button(uiText('全不选', 'Clear selection'), () => { rows.slice(0, MAX_VISIBLE_ROWS).forEach(row => included.delete(rowKey(row))); syncChecks(); renderBudget(); updateActions() }),
   )
   const limitRow = make('div', '', 'jdx-review-limit-row')
   const limitLabel = make('span', uiText('一次发送', 'Papers per request'), 'jdx-review-limit-label')

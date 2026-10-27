@@ -97,7 +97,7 @@ describe("quick review history", () => {
 const structuredRecord = (): QuickReviewRecord => ({
   ...record(),
   papers: [
-    { libraryID: 1, itemKey: "PAPER1", title: "Attention for tiny models", authors: "Wu Lin", year: "2025", publication: "ICML", index: 1, abstractState: "full" },
+    { libraryID: 1, itemKey: "PAPER1", title: "Attention for tiny models", authors: "Wu Lin", year: "2025", publication: "ICML", index: 1, abstractState: "full", links: ["https://expressive-humanoid.github.io", "https://arxiv.org/abs/2402.19099"], appendix: ["A. Motion Dataset Selection", "a. 不合标题形状的一行", "A. Motion Dataset Selection"] },
     { libraryID: 1, itemKey: "PAPER2", title: "Edge compilers", authors: "Chen Rui", year: "2024", publication: "MLSys", index: 2, abstractState: "missing" },
   ],
   review: {
@@ -129,6 +129,10 @@ describe("quick review history restore", () => {
     expect(restored?.result.papers.map(note => note.index)).toEqual([1])
     expect(restored?.result.papers[0].experiments).toBe("单款移动 NPU 对比")
     expect(restored?.result.papers[0].resourceNote).toBe("摘要称代码随论文发布")
+    // 链接与附录标题随记录保存：写入时已剔掉论文落地页和不合标题形状的行。
+    expect(restored?.papers[0].links).toEqual(["https://expressive-humanoid.github.io"])
+    expect(restored?.papers[0].appendix).toEqual(["A. Motion Dataset Selection"])
+    expect(restored?.papers[1].appendix).toBeUndefined()
     expect(restored?.result.ratings.map(rating => rating.index).sort()).toEqual([1, 2])
     expect(restored?.result.ratingOverview).toBe("整体偏工程实用。")
     expect(restored?.result.evaluated).toBe(true)

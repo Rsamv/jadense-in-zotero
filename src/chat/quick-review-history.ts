@@ -4,7 +4,7 @@ import { uiText } from "@/zotero/ui-preferences"
  * 与单篇解析历史分开保存：记录归属收藏夹而非某个附件，且只缓存可读文字，不承载任何库内写入输入。
  */
 import type { QuickReviewAvailability, QuickReviewDisplayPaper, QuickReviewPaperNote, QuickReviewPaperRating, QuickReviewRatingLevel, QuickReviewResult } from "./quick-review"
-import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, normalizeReviewLinks } from "./quick-review"
+import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, mergeReviewAppendix, normalizeReviewLinks } from "./quick-review"
 
 export const QUICK_REVIEW_HISTORY_PREF_KEY = "extensions.jadenseInZotero.quickReviewHistory"
 
@@ -25,6 +25,8 @@ export type QuickReviewRecordPaper = {
   abstractState?: QuickReviewDisplayPaper["abstractState"]
   /** 0.6.13.5 起保存本机发现的链接，历史点开才能复原徽章旁的链接行。 */
   links?: string[]
+  /** 0.6.13.6 起保存附录小节标题，历史点开才能复原"有附录"这条本机证据。 */
+  appendix?: string[]
 }
 
 /** 结构化正文：历史点开时能复原逐篇卡片，而不只有一段纯文本。 */
@@ -103,6 +105,7 @@ function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
     ...(index !== undefined ? { index } : {}),
     ...(state === "full" || state === "truncated" || state === "omitted" || state === "missing" ? { abstractState: state } : {}),
     ...(Array.isArray(row?.links) && row.links.length ? { links: normalizeReviewLinks(row.links.filter((link): link is string => typeof link === "string")) } : {}),
+    ...(Array.isArray(row?.appendix) && row.appendix.length ? { appendix: mergeReviewAppendix(row.appendix.filter((line): line is string => typeof line === "string")) } : {}),
   }
 }
 
@@ -204,6 +207,7 @@ export function quickReviewRecordView(record: QuickReviewRecord): { result: Quic
     publication: paper.publication,
     abstractState: paper.abstractState ?? "full",
     ...(paper.links?.length ? { links: paper.links } : {}),
+    ...(paper.appendix?.length ? { appendix: paper.appendix } : {}),
   }))
   return {
     papers,
