@@ -180,10 +180,12 @@ describe('attachment link scanning', () => {
     expect(quickReviewScanNotice(tooBig)).toContain('1 篇超过 60 MB')
   })
 
-  it('names the papers that have no readable PDF instead of staying quiet', async () => {    // 题录里没有对应条目（或附件不是本地 PDF）时，过去整轮什么都不报，看起来就像"扫描没做"。
-    const report = await scanRowsForAttachmentLinks({ doc: document, host: hostFixture({}), rows: [row('PAPER9')] })
-    expect(report).toMatchObject({ scanned: 1, parsed: 0, found: 0, noAttachment: 1, pages: 0 })
-    expect(report.rows[0].attachmentScanned).toBe(true)
+  it('names the papers that have no readable PDF instead of staying quiet', async () => {
+    // 条目能读到、但一条附件都没有：这才是"确实没有 PDF"，要和"没读到附件列表"分开。
+    const empty = { Items: { getByLibraryAndKey: () => ({ key: 'PAPER9', getAttachments: () => [] }), get: () => null } } as unknown as ZoteroLike
+    const report = await scanRowsForAttachmentLinks({ doc: document, host: empty, rows: [row('PAPER9')] })
+    expect(report).toMatchObject({ scanned: 1, parsed: 0, found: 0, noAttachment: 1, unavailable: 0, pages: 0 })
+    expect(report.rows[0]).toMatchObject({ attachmentScanned: true, scanOutcome: 'noAttachment' })
     expect(quickReviewScanNotice(report)).toContain('1 篇没有可读的 PDF 附件')
     expect(quickReviewScanNotice(report)).toContain('发现 0 条链接、0 篇有附录小节')
   })
@@ -204,13 +206,56 @@ describe('attachment link scanning', () => {
     expect(quickReviewScanNotice(noIO)).toContain('缺少附件读取能力')
   })
 
+  it('resolves items and attachments through the async API loaders Zotero 10 requires', async () => {
+    // 真实缺陷：从收藏夹取到的条目没装载 childItems，Items.get 只看缓存。
+    // 两者的失败都被吞成"没有附件"，卡片才写出"读了 0 页 · 未见附录"。
+    const paper = {
+      key: 'PAPER1', libraryID: 1, childItemsLoaded: false,
+      async loadDataType(type: string) { if (type === 'childItems') this.childItemsLoaded = true },
+      getAttachments() {
+        if (!this.childItemsLoaded) throw new Error('Item data not yet loaded (childItems)')
+        return [101]
+      },
+    }
+    const host = {
+      Items: {
+        // Zotero 10：同步 get 只查缓存，未装载就抛 UnloadedDataException。
+        get: () => { throw new Error('Item 101 not yet loaded') },
+        getAsync: async (id: number) => (id === 101 ? pdfAttachment('C:/tmp/one.pdf') : false),
+        getByLibraryAndKey: () => false,
+        getByLibraryAndKeyAsync: async () => paper,
+      },
+    } as unknown as ZoteroLike
+    const scanned = await scanRowsForAttachmentLinks({ doc: document, host, rows: [row('PAPER1')] })
+    expect(scanned.rows[0].links).toContain('https://yushi-du.github.io/COLA/')
+    expect(scanned.rows[0]).toMatchObject({ attachmentScanned: true, scanOutcome: 'parsed', scanPages: 10 })
+    expect(scanned).toMatchObject({ parsed: 1, unavailable: 0 })
+  })
+
+  it('reports an unreadable attachment list instead of marking the paper as scanned', async () => {
+    const host = {
+      Items: {
+        getByLibraryAndKeyAsync: async () => ({
+          getAttachments: () => { throw new Error('Item data not yet loaded (childItems)') },
+          loadDataType: async () => { throw new Error('database is closed') },
+        }),
+        get: () => false,
+      },
+    } as unknown as ZoteroLike
+    const scanned = await scanRowsForAttachmentLinks({ doc: document, host, rows: [row('PAPER1')] })
+    expect(scanned).toMatchObject({ scanned: 1, parsed: 0, noAttachment: 0, unavailable: 1 })
+    // 未读到附件 ≠ 查过没有：行不能带已扫描标记，下次生成还要重试。
+    expect(scanned.rows[0]).toMatchObject({ attachmentScanned: false, scanOutcome: 'unavailable' })
+    expect(quickReviewScanNotice(scanned)).toContain('1 篇未能读取附件列表')
+  })
+
   it('treats a broken library item as one paper without links', async () => {
     const broken = {
       Items: { getByLibraryAndKey: () => { throw new Error('gone') }, get: () => null },
     } as unknown as ZoteroLike
     const scanned = await scanRowsForAttachmentLinks({ doc: document, host: broken, rows: [row('PAPER1')] })
     expect(scanned).toMatchObject({ scanned: 1, found: 0, parsed: 0 })
-    expect(scanned.rows[0].attachmentScanned).toBe(true)
+    expect(scanned.rows[0].attachmentScanned).toBe(false)
   })
 })
 

@@ -13,10 +13,7 @@ export { createQuoteSource } from "@/chat/research-context"
 /** @deprecated 仅保留旧导出兼容；关联对话已经逐页读取全文，不使用此上限。 */
 export const MAX_PDF_SOURCE_PAGES = 80
 
-export type ResearchZotero = Omit<ZoteroLike, "Items" | "getActiveZoteroPane"> & {
-  Items?: ZoteroLike["Items"] & {
-    getAsync?(itemID: number): Promise<unknown>
-  }
+export type ResearchZotero = Omit<ZoteroLike, "getActiveZoteroPane"> & {
   PDFWorker?: {
     getFullText?(itemID: number, maxPages: number): Promise<unknown>
   }

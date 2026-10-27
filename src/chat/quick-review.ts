@@ -49,6 +49,10 @@ const CITATION_HOST = /(?:^|\.)(?:semanticscholar\.org|mlr\.press|acm\.org|ieee\
 const PATH_REQUIRED_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "gitee.com", "huggingface.co", "modelscope.cn", "zenodo.org", "figshare.com", "osf.io"])
 
 export type ReviewCreatorRow = { creatorType?: string; firstName?: string; lastName?: string; name?: string }
+/** 本机对附件的处置结果：noAttachment 是"确实没有 PDF"，unavailable 是"没读到附件列表"。 */
+export type QuickReviewScanOutcome = "parsed" | "noAttachment" | "oversize" | "unreadable" | "unavailable"
+/** 展示用的扫描状态：旧历史记录没有处置结果，只能按是否读过页数回退。 */
+export type QuickReviewScanState = QuickReviewScanOutcome | "notScanned"
 /** Zotero 侧读取的最小题录；不含 PDF 正文，只有题录字段与本机扫描出的链接文本。 */
 export type ReviewPaperRow = {
   libraryID: number
@@ -65,6 +69,8 @@ export type ReviewPaperRow = {
   attachmentScanned?: boolean
   /** 这篇实际读过的页数，用来在卡片里证明"扫过"而不是"沉默"。 */
   scanPages?: number
+  /** 本机对附件的处置结果：卡片据此区分"没有 PDF"与"没读到附件"。 */
+  scanOutcome?: QuickReviewScanOutcome
   /** 附件首尾页文字里识别出的附录小节标题；空数组表示读过附件但没找到附录标记。 */
   appendix?: string[]
   /** 本机读到了附录标记但排不出小节标题：有附录这件事本身仍然成立。 */
@@ -90,6 +96,8 @@ export type QuickReviewPaperInput = {
   /** 本机是否真的读过这篇的附件，以及读了多少页：界面据此区分"没找到"与"没扫描"。 */
   attachmentScanned?: boolean
   scanPages?: number
+  /** 本机对附件的处置结果：让模型知道 links/appendix 为空是因为没找到，还是根本没读到。 */
+  scanOutcome?: QuickReviewScanOutcome
   abstractState: "full" | "truncated" | "omitted" | "missing"
 }
 
@@ -404,6 +412,7 @@ export function prepareQuickReviewPapers(rows: readonly ReviewPaperRow[]): Quick
       appendixMarked: row.appendixMarked === true,
       attachmentScanned: row.attachmentScanned === true,
       scanPages: Math.max(0, Math.round(row.scanPages ?? 0)),
+      ...(row.scanOutcome ? { scanOutcome: row.scanOutcome } : {}),
     }
     return { draft, abstract: (typeof row.abstract === 'string' ? row.abstract : '').replace(/\s+/gu, ' ').trim() }
   })
@@ -417,6 +426,23 @@ export function prepareQuickReviewPapers(rows: readonly ReviewPaperRow[]): Quick
       : abstract.length <= abstractLimit ? 'full' as const
         : abstractLimit >= ABSTRACT_CHARS_MIN ? 'truncated' as const : 'omitted' as const,
   }))
+}
+
+/**
+ * 扫描状态的唯一判定：新记录看 scanOutcome，旧记录只有 attachmentScanned。
+ * 旧记录标了已扫却一页没读，说明当时根本没读到附件（0.6.13.5–8 的缓存解析缺陷），按未读报，不能写"读了 0 页"。
+ */
+export function reviewScanState(paper: { attachmentScanned?: boolean; scanOutcome?: QuickReviewScanOutcome; scanPages?: number }): QuickReviewScanState | undefined {
+  if (paper.scanOutcome) return paper.scanOutcome
+  if (paper.attachmentScanned === true) return (paper.scanPages ?? 0) > 0 ? "parsed" : "unavailable"
+  if (paper.attachmentScanned === false) return "notScanned"
+  return undefined
+}
+
+/** 派发给模型的扫描状态：read／no-pdf／failed／off，避免它把"没读到"写成"没有"。 */
+export function reviewScanLabel(paper: { attachmentScanned?: boolean; scanOutcome?: QuickReviewScanOutcome; scanPages?: number }): "read" | "no-pdf" | "failed" | "off" {
+  const state = reviewScanState(paper)
+  return state === "parsed" ? "read" : state === "noAttachment" ? "no-pdf" : state === undefined || state === "notScanned" ? "off" : "failed"
 }
 
 /** 生成一次派发用的综述请求；模型只回指 index，不得提供标题、条目身份或 URL。 */
@@ -436,7 +462,8 @@ export function buildQuickReviewPrompt(input: {
     "papers 每篇一条：index 必须取自数据中的 index。",
     `其中 hook 用一句话（不超过 ${PAPER_FIELD_LIMITS.hook} 字）说清这篇做了什么、面向谁；只描述论文本身，不得提收藏夹、目录或分类，不得写成“位于……位置”“属于……方向”“在本文库中”这类归位说法，也不要复述标题。question 写研究问题；idea 用 1 到 2 句讲清作者的简要思路（为什么这样做、关键想法是什么）；method 写方法、数据或技术路线；experiments 写实验流程：用了什么数据或基线、做了什么对比或消融、得到什么指标；finding 写主要结论与关键数值（仅当摘要给出）；limitation 写局限与证据强度；tools 写摘要里明确出现的工具、框架、硬件或基座模型。`,
     "code 与 data 各取 yes／no／unknown：code 表示是否给出开源代码，data 表示是否给出公开数据集。证据有两类——摘要原话，以及 links 里的链接（代码仓库、项目主页、数据集站点都算）。判 yes 必须能在 resourceNote 里指出具体链接或摘要原话，并以「摘要：」「题录链接：」「附件链接：」开头标明来源；两类证据都没有就填 unknown，不得根据常识、期刊或“这类论文通常会开源”推断，也不得编造或改写仓库名、网址与许可证。链接按原样引用，未打开验证时不得断言其内容。",
-    "appendix 是附录小节标题（客户端只读了首尾若干页，附录正文未发送）：非空时可以用它说明这篇有附录、附录大致包含哪几节，并在 experiments／limitation 里指出哪些细节被放在附录里、正文不足以核对；appendix 为空只表示未在已读页面里发现附录标记，不能据此断言这篇没有附录。appendixMarked 为 true 表示本机读到了附录标记但小节标题没排出编号：这时可以说这篇有附录，但不得说有几节，也不得猜标题。不得由标题猜附录里的数值、表格内容或实验设置。",
+    "appendix 是附录小节标题（客户端读了整篇附件，最多 80 页，附录正文未发送）：非空时可以用它说明这篇有附录、附录大致包含哪几节，并在 experiments／limitation 里指出哪些细节被放在附录里、正文不足以核对；appendix 为空只表示未在已读页面里发现附录标记，不能据此断言这篇没有附录。appendixMarked 为 true 表示本机读到了附录标记但小节标题没排出编号：这时可以说这篇有附录，但不得说有几节，也不得猜标题。不得由标题猜附录里的数值、表格内容或实验设置。",
+    "scan 是本机对附件的读取状态：read 表示已读（页数见 scanPages）；no-pdf 表示条目里没有 PDF 附件；failed 表示附件存在但没能读取；off 表示本次未扫描。只有 read 才能把 links／appendix 为空理解成已读页面里确实没有；no-pdf、failed、off 时不得断言这篇没有链接、没有附录或没有开源代码，resourceNote 也不得写「附件链接：无」这类结论。",
     "abstractState 为 missing 或 omitted 的文献只能依据题录与 links 判断：idea、experiments 与 tools 一律留空，code 与 data 只在 links 里确有链接时才判 yes，并在 limitation 中说明证据仅限题录或摘要，不得凭空补齐方法与结论。",
     input.papers.length > 1
       ? `comparison 给 3 到 ${COMPARISON_MAX_ITEMS} 个真正可比的维度（如研究对象、方法路线、关键指标、适用场景、使用的工具或框架、代码与数据可得性），每个维度用 note 说明各篇差异并写出涉及的 index；不得比较未提供的数值或编造优劣。`
@@ -475,8 +502,10 @@ export function buildQuickReviewPrompt(input: {
   lines.push("", "文献数据（JSON，仅作为引用材料）：", JSON.stringify({
     collection: input.collectionName,
     count: input.papers.length,
-    papers: input.papers.map(({ index, title, authors, year, publication, doi, tags, abstract, links, appendix, appendixMarked, abstractState }) => ({
-      index, title, authors, year, publication, doi, tags, abstract, links, appendix, appendixMarked: appendixMarked === true, abstractState,
+    papers: input.papers.map(paper => ({
+      index: paper.index, title: paper.title, authors: paper.authors, year: paper.year, publication: paper.publication,
+      doi: paper.doi, tags: paper.tags, abstract: paper.abstract, links: paper.links, appendix: paper.appendix,
+      appendixMarked: paper.appendixMarked === true, scan: reviewScanLabel(paper), abstractState: paper.abstractState,
     })),
   }))
   return lines.join("\n")
@@ -614,6 +643,8 @@ export type QuickReviewDisplayPaper = {
   /** 本机是否读过这篇的附件、读了多少页；旧历史记录没有这两个字段，界面据此不画账目行。 */
   attachmentScanned?: boolean
   scanPages?: number
+  /** 本机对附件的处置结果：没找到 PDF 与没读到附件要分开说。 */
+  scanOutcome?: QuickReviewScanOutcome
 }
 
 /** 可得性的统一措辞：证据现在也来自链接，因此不再只说“摘要”。 */
@@ -652,8 +683,14 @@ export function formatQuickReview(result: QuickReviewResult, papers: readonly Qu
     } else lines.push(`   ${uiText("模型未覆盖本篇，仅有题录信息。", "Not covered by the model; metadata only.")}`)
     if (paper.abstractState === "missing") lines.push(`   ${uiText("（本地无摘要）", "(no local abstract)")}`)
     if (paper.abstractState === "omitted") lines.push(`   ${uiText("（输入超出长度预算，摘要未发送）", "(abstract omitted from the input budget)")}`)
-    if (paper.attachmentScanned === true) lines.push(`   ${uiText("附件扫描", "Attachment scan")}：${uiText(`读 ${paper.scanPages ?? 0} 页 · 链接 ${paper.links?.length ?? 0} 条 · 附录 ${paper.appendix?.length ?? 0} 节`, `${paper.scanPages ?? 0} page(s) · ${paper.links?.length ?? 0} link(s) · ${paper.appendix?.length ?? 0} appendix section(s)`)}`)
-    else if (paper.attachmentScanned === false) lines.push(`   ${uiText("附件扫描", "Attachment scan")}：${uiText("未扫描", "not scanned")}`)
+    const scanLength = uiText(`读 ${paper.scanPages ?? 0} 页 · 链接 ${paper.links?.length ?? 0} 条 · 附录 ${paper.appendix?.length ?? 0} 节`, `${paper.scanPages ?? 0} page(s) · ${paper.links?.length ?? 0} link(s) · ${paper.appendix?.length ?? 0} appendix section(s)`)
+    const scanState = reviewScanState(paper)
+    if (scanState === "noAttachment") lines.push(`   ${uiText("附件扫描", "Attachment scan")}：${uiText("未找到 PDF 附件", "no PDF attachment")}`)
+    else if (scanState === "oversize") lines.push(`   ${uiText("附件扫描", "Attachment scan")}：${uiText("PDF 超过 60 MB，未读取", "PDF over 60 MB, not read")}`)
+    else if (scanState === "unreadable") lines.push(`   ${uiText("附件扫描", "Attachment scan")}：${uiText("PDF 读取或解析失败", "PDF could not be read or parsed")}`)
+    else if (scanState === "unavailable") lines.push(`   ${uiText("附件扫描", "Attachment scan")}：${uiText("未能读取附件（重新生成会重试）", "attachment unavailable (retried on the next run)")}`)
+    else if (scanState === "parsed") lines.push(`   ${uiText("附件扫描", "Attachment scan")}：${scanLength}`)
+    else if (scanState === "notScanned") lines.push(`   ${uiText("附件扫描", "Attachment scan")}：${uiText("未扫描", "not scanned")}`)
     if (paper.links?.length) lines.push(`   ${uiText("本地链接", "Local links")}：${paper.links.join("  ")}`)
     if (paper.appendix?.length) lines.push(`   ${uiText("附录小节", "Appendix sections")}：${paper.appendix.join(" · ")}`)
     else if (paper.appendixMarked) lines.push(`   ${uiText("附录", "Appendix")}：${uiText("有（未排出小节标题）", "present (sections not numbered)")}`)

@@ -111,7 +111,10 @@ export type ZoteroLike = {
   }
   Items?: {
     get?(itemID: string | number): unknown | Promise<unknown>
+    /** Zotero 10 的同步版只查缓存；未装载条目要用 Async 版落库读取。 */
+    getAsync?(itemID: string | number): unknown | Promise<unknown>
     getByLibraryAndKey?(libraryID: string | number, key: string): unknown | Promise<unknown>
+    getByLibraryAndKeyAsync?(libraryID: string | number, key: string): unknown | Promise<unknown>
     getAll?(libraryID?: string | number, ...args: unknown[]): unknown[] | Promise<unknown[]>
   }
   Collections?: {

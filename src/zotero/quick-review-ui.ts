@@ -9,6 +9,7 @@ import {
   QUICK_REVIEW_MAX_LIMIT,
   reviewAvailabilityText,
   reviewRatingText,
+  reviewScanState,
   type QuickReviewAvailability,
   type QuickReviewDisplayPaper,
   type QuickReviewRatingLevel,
@@ -173,8 +174,15 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
       if (meta) text.append(make('small', meta))
       if (!String(row.abstract ?? '').trim()) text.append(make('em', uiText('无摘要', 'no abstract'), 'jdx-review-badge'))
       if (row.links?.length) text.append(make('em', uiText(`本机发现 ${row.links.length} 条链接`, `${row.links.length} link(s) found locally`), 'jdx-review-badge'))
-      // 扫过但一无所获也要标记：否则清单上看不出"扫了"和"没扫"的差别。
-      else if (row.attachmentScanned) text.append(make('em', uiText(`附件已扫 ${row.scanPages ?? 0} 页，未见链接`, `Attachment scanned (${row.scanPages ?? 0} pages), no link`), 'jdx-review-badge'))
+      // 扫过但一无所获也要标记：否则清单上看不出"扫了"和"没扫"的差别；没读到附件则必须单独说。
+      else {
+        const scan = reviewScanState(row)
+        if (scan === 'parsed') text.append(make('em', uiText(`附件已扫 ${row.scanPages ?? 0} 页，未见链接`, `Attachment scanned (${row.scanPages ?? 0} pages), no link`), 'jdx-review-badge'))
+        else if (scan === 'noAttachment') text.append(make('em', uiText('未找到 PDF 附件', 'no PDF attachment'), 'jdx-review-badge'))
+        else if (scan === 'unavailable') text.append(make('em', uiText('附件未读取', 'attachment unread'), 'jdx-review-badge'))
+        else if (scan === 'oversize') text.append(make('em', uiText('PDF 超 60 MB', 'PDF over 60 MB'), 'jdx-review-badge'))
+        else if (scan === 'unreadable') text.append(make('em', uiText('PDF 读取失败', 'PDF unreadable'), 'jdx-review-badge'))
+      }
       if (row.appendix?.length) text.append(make('em', uiText(`附录 ${row.appendix.length} 节`, `${row.appendix.length} appendix section(s)`), 'jdx-review-badge'))
       // 读到标记但排不出编号也算"有附录"：不写这一条，用户会以为附录检测没做。
       else if (row.appendixMarked) text.append(make('em', uiText('有附录（未列小节）', 'appendix present (sections unnumbered)'), 'jdx-review-badge'))
@@ -241,13 +249,20 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
   const evidenceRow = (paper: QuickReviewDisplayPaper) => {
     // 旧历史记录没有扫描字段：那时的情况已经不可知，画"未扫描"是编造，干脆不画。
     if (paper.attachmentScanned === undefined) return null
+    const scan = reviewScanState(paper)
+    if (!scan) return null
     const row = make('div', '', 'jdx-review-evidence')
     const links = paper.links?.length ?? 0
     const sections = paper.appendix?.length ?? 0
     const appendix = sections ? uiText(`附录小节 ${sections} 节`, `${sections} appendix section(s)`) : paper.appendixMarked ? uiText('有附录（未列小节）', 'appendix present (unnumbered)') : uiText('未见附录', 'no appendix')
-    row.textContent = paper.attachmentScanned
+    // 没读成附件时说"读了 0 页"会被读成"这篇确实什么都没有"：每种失败各说各的。
+    row.textContent = scan === 'parsed'
       ? uiText(`附件：读了 ${paper.scanPages ?? 0} 页 · 发现链接 ${links} 条 · ${appendix}`, `Attachment: ${paper.scanPages ?? 0} page(s) read · ${links} link(s) · ${appendix}`)
-      : uiText('附件：本次未扫描（可勾选「扫描附件找开源链接」后重新生成）', 'Attachment: not scanned (enable "Scan attachments for code links" and generate again)')
+      : scan === 'noAttachment' ? uiText('附件：未找到 PDF 附件（题录与摘要仍已发送）', 'Attachment: no PDF attachment found (metadata and abstract were still sent)')
+        : scan === 'oversize' ? uiText('附件：PDF 超过 60 MB，未读取', 'Attachment: PDF over 60 MB, not read')
+          : scan === 'unreadable' ? uiText('附件：PDF 读取或解析失败', 'Attachment: PDF could not be read or parsed')
+            : scan === 'unavailable' ? uiText('附件：未能读取附件（重新生成会重试）', 'Attachment: attachment unavailable (retried on the next run)')
+              : uiText('附件：本次未扫描（可勾选「扫描附件找开源链接」后重新生成）', 'Attachment: not scanned (enable "Scan attachments for code links" and generate again)')
     return row
   }
   const paperCard = (paper: QuickReviewDisplayPaper, note: QuickReviewResult['papers'][number] | undefined) => {

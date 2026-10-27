@@ -97,8 +97,8 @@ function mount(count: number, options: { evaluatePref?: boolean; scanPref?: bool
   state.run.mockImplementation(async (input: { rows: ReviewPaperRow[]; evaluate?: boolean }) => outcome(input.rows, input.evaluate === true))
   // 默认按"扫描没找到链接"返回：行为与原行一致，只有 attachmentScanned 标记被点亮。
   state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
-    rows: rows.map(row => ({ ...row, attachmentScanned: true })),
-    scanned: rows.length, parsed: rows.length, found: 0, withAppendix: 0, noAttachment: 0, pages: 30, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false,
+    rows: rows.map(row => ({ ...row, attachmentScanned: true, scanPages: 10, scanOutcome: 'parsed' as const })),
+    scanned: rows.length, parsed: rows.length, found: 0, withAppendix: 0, noAttachment: 0, pages: 30, oversize: 0, unreadable: 0, unavailable: 0, parserMissing: false, readerMissing: false,
   }))
   const review = mountQuickReview(document, host, vi.fn())
   const root = document.querySelector<HTMLElement>('#jadense-quick-review-dialog')!
@@ -234,8 +234,8 @@ it('reads attachment links once per batch and shows only the link text', async (
   state.scan.mockImplementation(async ({ rows, onProgress }: { rows: ReviewPaperRow[]; onProgress?: (message: string) => void }) => {
     onProgress?.('正在扫描附件里的开源链接 · 1/3')
     return {
-      rows: rows.map((row, position) => ({ ...row, links: [...(row.links ?? []), ...(position === 0 ? ['https://github.com/tiny/attn'] : [])], attachmentScanned: true })),
-      scanned: rows.length, parsed: rows.length, found: 1, withAppendix: 0, noAttachment: 0, pages: 30, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false,
+      rows: rows.map((row, position) => ({ ...row, links: [...(row.links ?? []), ...(position === 0 ? ['https://github.com/tiny/attn'] : [])], attachmentScanned: true, scanPages: 10, scanOutcome: 'parsed' as const })),
+      scanned: rows.length, parsed: rows.length, found: 1, withAppendix: 0, noAttachment: 0, pages: 30, oversize: 0, unreadable: 0, unavailable: 0, parserMissing: false, readerMissing: false,
     }
   })
   await review.open([1])
@@ -279,9 +279,9 @@ it('shows appendix titles from the local pages without wiping the user tick mark
   const { review, root, labeled } = mount(3)
   state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
     rows: rows.map((row, position) => position === 0
-      ? { ...row, links: ['https://expressive-humanoid.github.io'], appendix: ['A. Motion Dataset Selection', 'B. Additional Training Details'], attachmentScanned: true, scanPages: 13 }
-      : { ...row, attachmentScanned: true, scanPages: 8 }),
-    scanned: rows.length, parsed: rows.length - 1, found: 1, withAppendix: 1, noAttachment: 0, pages: 26, oversize: 1, unreadable: 0, parserMissing: false, readerMissing: false,
+      ? { ...row, links: ['https://expressive-humanoid.github.io'], appendix: ['A. Motion Dataset Selection', 'B. Additional Training Details'], attachmentScanned: true, scanPages: 13, scanOutcome: 'parsed' as const }
+      : { ...row, attachmentScanned: true, scanPages: 0, scanOutcome: 'oversize' as const }),
+    scanned: rows.length, parsed: rows.length - 1, found: 1, withAppendix: 1, noAttachment: 0, pages: 26, oversize: 1, unreadable: 0, unavailable: 0, parserMissing: false, readerMissing: false,
   }))
   await review.open([1])
   const boxes = () => [...root.querySelectorAll<HTMLInputElement>('.jdx-review-papers input[type="checkbox"]')]
@@ -304,7 +304,7 @@ it('shows appendix titles from the local pages without wiping the user tick mark
 it('says so when the local PDF parser never loads', async () => {
   const { review, root, labeled } = mount(3)
   state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
-    rows: [...rows], scanned: 0, parsed: 0, found: 0, oversize: 0, unreadable: 0, parserMissing: true, readerMissing: false,
+    rows: [...rows], scanned: 0, parsed: 0, found: 0, oversize: 0, unreadable: 0, unavailable: 0, parserMissing: true, readerMissing: false,
   }))
   await review.open([1])
   await click(labeled('生成综述'))

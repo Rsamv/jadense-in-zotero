@@ -80,8 +80,10 @@ describe("quick review input", () => {
     expect(data.collection).toBe("Edge AI")
     expect(data.count).toBe(1)
     expect(Object.keys(data.papers[0]).sort()).toEqual(
-      ["abstract", "abstractState", "appendix", "appendixMarked", "authors", "doi", "index", "links", "publication", "tags", "title", "year"].sort(),
+      ["abstract", "abstractState", "appendix", "appendixMarked", "authors", "doi", "index", "links", "publication", "scan", "tags", "title", "year"].sort(),
     )
+    // 附件没读成时模型必须知道：否则会把"没读到"写成"没有"。
+    expect(data.papers[0].scan).toBe("off")
     // 链接原文随数据送出，模型才不需要凭记忆猜网址。
     expect(data.papers[0].links).toEqual(["https://yushi-du.github.io/COLA/"])
     expect(prompt).toContain("index 必须取自数据中的 index")

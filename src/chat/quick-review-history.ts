@@ -3,10 +3,13 @@ import { uiText } from "@/zotero/ui-preferences"
  * 收藏夹快速解析的本机历史。
  * 与单篇解析历史分开保存：记录归属收藏夹而非某个附件，且只缓存可读文字，不承载任何库内写入输入。
  */
-import type { QuickReviewAvailability, QuickReviewDisplayPaper, QuickReviewPaperNote, QuickReviewPaperRating, QuickReviewRatingLevel, QuickReviewResult } from "./quick-review"
+import type { QuickReviewAvailability, QuickReviewDisplayPaper, QuickReviewPaperNote, QuickReviewPaperRating, QuickReviewRatingLevel, QuickReviewResult, QuickReviewScanOutcome } from "./quick-review"
 import { PAPER_FIELD_LIMITS, RATING_FIELD_LIMITS, mergeReviewAppendix, normalizeReviewLinks } from "./quick-review"
 
 export const QUICK_REVIEW_HISTORY_PREF_KEY = "extensions.jadenseInZotero.quickReviewHistory"
+
+/** 历史里的扫描结论只认这几种：未知值一律丢弃，避免坏记录把卡片画成别的状态。 */
+const SCAN_OUTCOMES: readonly QuickReviewScanOutcome[] = ["parsed", "noAttachment", "oversize", "unreadable", "unavailable"]
 
 export type QuickReviewPreferenceStore = {
   get(key: string): unknown
@@ -32,6 +35,8 @@ export type QuickReviewRecordPaper = {
   /** 0.6.13.8 起保存扫描账目：历史点开时能看出当时读过多少页、是否压根没扫。 */
   attachmentScanned?: boolean
   scanPages?: number
+  /** 0.6.13.9 起保存扫描结论：历史里也要分清"没有 PDF"与"没读到附件"。 */
+  scanOutcome?: QuickReviewScanOutcome
 }
 
 /** 结构化正文：历史点开时能复原逐篇卡片，而不只有一段纯文本。 */
@@ -114,6 +119,7 @@ function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
     ...(row?.appendixMarked === true ? { appendixMarked: true } : {}),
     ...(typeof row?.attachmentScanned === "boolean" ? { attachmentScanned: row.attachmentScanned } : {}),
     ...(typeof row?.scanPages === "number" && Number.isFinite(row.scanPages) && row.scanPages >= 0 ? { scanPages: Math.round(row.scanPages) } : {}),
+    ...(SCAN_OUTCOMES.includes(row?.scanOutcome as QuickReviewScanOutcome) ? { scanOutcome: row!.scanOutcome as QuickReviewScanOutcome } : {}),
   }
 }
 
@@ -219,6 +225,7 @@ export function quickReviewRecordView(record: QuickReviewRecord): { result: Quic
     ...(paper.appendixMarked === true ? { appendixMarked: true } : {}),
     ...(typeof paper.attachmentScanned === "boolean" ? { attachmentScanned: paper.attachmentScanned } : {}),
     ...(typeof paper.scanPages === "number" ? { scanPages: paper.scanPages } : {}),
+    ...(SCAN_OUTCOMES.includes(paper.scanOutcome as QuickReviewScanOutcome) ? { scanOutcome: paper.scanOutcome } : {}),
   }))
   return {
     papers,

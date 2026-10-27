@@ -282,6 +282,7 @@ export async function runQuickReview(input: {
       libraryID: paper.libraryID, itemKey: paper.itemKey, title: paper.title, authors: paper.authors, year: paper.year, publication: paper.publication,
       index: paper.index, abstractState: paper.abstractState, links: paper.links, appendix: paper.appendix,
       attachmentScanned: paper.attachmentScanned === true, scanPages: paper.scanPages ?? 0,
+      ...(paper.scanOutcome ? { scanOutcome: paper.scanOutcome } : {}),
       appendixMarked: paper.appendixMarked === true,
     })),
     overview: result.overview,
