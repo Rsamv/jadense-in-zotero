@@ -173,7 +173,11 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
       if (meta) text.append(make('small', meta))
       if (!String(row.abstract ?? '').trim()) text.append(make('em', uiText('无摘要', 'no abstract'), 'jdx-review-badge'))
       if (row.links?.length) text.append(make('em', uiText(`本机发现 ${row.links.length} 条链接`, `${row.links.length} link(s) found locally`), 'jdx-review-badge'))
+      // 扫过但一无所获也要标记：否则清单上看不出"扫了"和"没扫"的差别。
+      else if (row.attachmentScanned) text.append(make('em', uiText(`附件已扫 ${row.scanPages ?? 0} 页，未见链接`, `Attachment scanned (${row.scanPages ?? 0} pages), no link`), 'jdx-review-badge'))
       if (row.appendix?.length) text.append(make('em', uiText(`附录 ${row.appendix.length} 节`, `${row.appendix.length} appendix section(s)`), 'jdx-review-badge'))
+      // 读到标记但排不出编号也算"有附录"：不写这一条，用户会以为附录检测没做。
+      else if (row.appendixMarked) text.append(make('em', uiText('有附录（未列小节）', 'appendix present (sections unnumbered)'), 'jdx-review-badge'))
       label.append(input, text); paperList.append(label)
     }
     if (rows.length > visible.length) paperList.append(make('p', uiText(`收藏夹内还有 ${rows.length - visible.length} 篇未列出；请先在 Zotero 中拆分收藏夹。`, `${rows.length - visible.length} further papers are hidden. Split the collection in Zotero first.`)))
@@ -230,11 +234,29 @@ export function mountQuickReview(doc: Document, host: ZoteroLike, openSettings: 
     for (const title of titles) row.append(make('span', title, 'jdx-review-appendix-item'))
     return row
   }
+  /**
+   * 扫描账目：0 条链接、0 节附录也要写出来。上一版只在有结果时才画这一行，
+   * 于是"扫过但确实没有"与"根本没扫"在界面上完全一样，用户只能看到沉默。
+   */
+  const evidenceRow = (paper: QuickReviewDisplayPaper) => {
+    // 旧历史记录没有扫描字段：那时的情况已经不可知，画"未扫描"是编造，干脆不画。
+    if (paper.attachmentScanned === undefined) return null
+    const row = make('div', '', 'jdx-review-evidence')
+    const links = paper.links?.length ?? 0
+    const sections = paper.appendix?.length ?? 0
+    const appendix = sections ? uiText(`附录小节 ${sections} 节`, `${sections} appendix section(s)`) : paper.appendixMarked ? uiText('有附录（未列小节）', 'appendix present (unnumbered)') : uiText('未见附录', 'no appendix')
+    row.textContent = paper.attachmentScanned
+      ? uiText(`附件：读了 ${paper.scanPages ?? 0} 页 · 发现链接 ${links} 条 · ${appendix}`, `Attachment: ${paper.scanPages ?? 0} page(s) read · ${links} link(s) · ${appendix}`)
+      : uiText('附件：本次未扫描（可勾选「扫描附件找开源链接」后重新生成）', 'Attachment: not scanned (enable "Scan attachments for code links" and generate again)')
+    return row
+  }
   const paperCard = (paper: QuickReviewDisplayPaper, note: QuickReviewResult['papers'][number] | undefined) => {
     const card = make('div', '', 'jdx-review-card')
     card.append(make('h4', `${paper.index}. ${paper.title}`))
     const meta = [paper.authors, paper.year, paper.publication].filter(Boolean).join(' · ')
     if (meta) card.append(make('p', meta, 'jdx-review-card-meta'))
+    const evidence = evidenceRow(paper)
+    if (evidence) card.append(evidence)
     if (paper.links?.length) card.append(linksRow(paper.links))
     if (paper.appendix?.length) card.append(appendixRow(paper.appendix))
     if (!note) {

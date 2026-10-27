@@ -7,7 +7,7 @@ import { quickReviewScanNotice, scanRowsForAttachmentLinks } from './review-link
 import { initializeUiLocale } from './ui-preferences'
 import type { ZoteroLike } from './runtime'
 
-const state = vi.hoisted(() => ({ getDocument: vi.fn(), loaded: 0, rejects: false, pages: [] as number[] }))
+const state = vi.hoisted(() => ({ getDocument: vi.fn(), loaded: 0, rejects: false, pages: [] as number[], annots: {} as Record<number, string[]> }))
 
 /** 十页样例：取证要读全部页，链接与附录标题分别埋在首页、中间页与末页。 */
 const ALL_PAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
@@ -40,6 +40,8 @@ vi.mock('./pdf-module', async importActual => ({
               state.pages.push(page)
               return {
                 getTextContent: async () => ({ items: [{ str: PAGE_TEXT[page] ?? '', hasEOL: true }] }),
+                // 超链接注释：文字层抽不出网址时，地址仍然挂在这里。
+                getAnnotations: async () => (state.annots[page] ?? []).map(url => ({ subtype: 'Link', url })),
               }
             },
           }),
@@ -79,7 +81,7 @@ const io = (bytes: () => Uint8Array) => {
 
 beforeEach(() => {
   initializeUiLocale({ locale: 'zh-CN' })
-  state.getDocument.mockReset(); state.loaded = 0; state.rejects = false; state.pages = []
+  state.getDocument.mockReset(); state.loaded = 0; state.rejects = false; state.pages = []; state.annots = {}
   io(() => new Uint8Array([1, 2, 3]))
 })
 
@@ -93,13 +95,17 @@ describe('attachment link scanning', () => {
   it('reads every page for evidence but only ships link text and appendix titles', async () => {
     const scanned = await scanRowsForAttachmentLinks({ doc: document, host: pdfHost, rows: [row('PAPER1', ['https://github.com/tiny/attn'])] })
     // 真实体检里有一篇 15 页 PDF 的 8 个附录小节全在中间页：只读首尾页就会漏。
-    expect(state.pages).toEqual(ALL_PAGES)
+    expect([...new Set(state.pages)]).toEqual(ALL_PAGES)
+    // 注释只回到靠前两页取：参考列表页里的仓库不算作者资源。
+    expect(state.pages.slice(ALL_PAGES.length)).toEqual([1, 2])
     expect(scanned.rows[0].links).toEqual([
       'https://github.com/tiny/attn',
       'https://yushi-du.github.io/COLA/',
       'https://expressive-humanoid.github.io',
       'https://zenodo.org/records/1234',
+      'https://www.unitree.com/h1',
     ])
+    expect(scanned.rows[0].scanPages).toBe(10)
     // 附录只带出小节标题；正文里那句 40 小时的数据描述不外发。
     expect(scanned.rows[0].appendix).toEqual(['A. Motion Dataset Selection', 'B. Additional Training Details'])
     expect(scanned.rows[0].attachmentScanned).toBe(true)
@@ -109,6 +115,21 @@ describe('attachment link scanning', () => {
     // 扫到了东西也要报数：回执不能只在出问题时才开口。
     expect(quickReviewScanNotice(scanned)).toContain('读了 1 篇 PDF 共 10 页')
     expect(quickReviewScanNotice(scanned)).toContain('发现 1 条链接、1 篇有附录小节')
+  })
+
+  it('picks links out of PDF hyperlink annotations when the text layer has no URL', async () => {
+    // 真实样本里 610 条注释链接有 572 条文字层抽不到：只扫文字就会把作者自己的项目页漏掉。
+    state.annots = {
+      1: ['https://bopi-loco.github.io/', 'https://orcid.org/0000-0002-1031-7621', 'https://arxiv.org/abs/2610.13087v1'],
+      9: ['https://github.com/someone/cited-tool'],
+    }
+    const scanned = await scanRowsForAttachmentLinks({ doc: document, host: pdfHost, rows: [row('PAPER1')] })
+    expect(scanned.rows[0].links).toContain('https://bopi-loco.github.io/')
+    // 身份页、论文落地页不算资源；参考列表页（第 9 页）里的仓库属于被引工作，不能算这篇的代码。
+    expect(scanned.rows[0].links).not.toContain('https://orcid.org/0000-0002-1031-7621')
+    expect(scanned.rows[0].links).not.toContain('https://arxiv.org/abs/2610.13087v1')
+    expect(scanned.rows[0].links).not.toContain('https://github.com/someone/cited-tool')
+    expect(scanned.rows[0].scanPages).toBe(10)
   })
 
   it('marks every scanned row once and never re-reads the batch', async () => {

@@ -281,6 +281,8 @@ export async function runQuickReview(input: {
     papers: papers.map(paper => ({
       libraryID: paper.libraryID, itemKey: paper.itemKey, title: paper.title, authors: paper.authors, year: paper.year, publication: paper.publication,
       index: paper.index, abstractState: paper.abstractState, links: paper.links, appendix: paper.appendix,
+      attachmentScanned: paper.attachmentScanned === true, scanPages: paper.scanPages ?? 0,
+      appendixMarked: paper.appendixMarked === true,
     })),
     overview: result.overview,
     notes: text,

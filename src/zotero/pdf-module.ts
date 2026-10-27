@@ -40,6 +40,30 @@ export async function readPdfPagesText(pdf: PdfDocument, pages: readonly number[
 }
 
 /**
+ * 只取指定页的超链接注释（/Annots 里的 Link）。文字层经常抽不出网址——它被排成图形、
+ * 拆成多段或被字体映射吃掉——但可点击的注释仍然保留原地址，这是补漏的第二条通道。
+ */
+export async function readPdfPageLinks(pdf: PdfDocument, pages: readonly number[]): Promise<{ page: number; url: string }[]> {
+  const found: { page: number; url: string }[] = []
+  for (const page of pages) {
+    let annotations: unknown[] = []
+    try {
+      annotations = await (await pdf.getPage(page)).getAnnotations({ intent: 'display' }) as unknown[]
+    } catch {
+      continue
+    }
+    for (const entry of annotations) {
+      if (!entry || typeof entry !== 'object') continue
+      const annotation = entry as { subtype?: unknown; url?: unknown; unsafeUrl?: unknown }
+      if (annotation.subtype !== 'Link') continue
+      const url = typeof annotation.url === 'string' ? annotation.url : typeof annotation.unsafeUrl === 'string' ? annotation.unsafeUrl : ''
+      if (url.trim()) found.push({ page, url: url.trim() })
+    }
+  }
+  return found
+}
+
+/**
  * 取证要读的页码：实测一篇 27 页 PDF 全文抽取只要 224 ms，只读首尾页省不下时间，
  * 却会漏掉夹在正文之后的附录（真实样本里 8 个小节标题全在中间页）。因此整篇都读，
  * 超过上限时取首尾两半；文字只在内存里过一遍，外发的仍是链接文本与小节标题。

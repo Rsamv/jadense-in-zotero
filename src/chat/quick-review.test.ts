@@ -9,6 +9,7 @@ import {
   reviewYear,
   formatReviewAuthors,
   extractReviewLinks,
+  extractAnnotationReviewLinks,
   isResourceLink,
   normalizeReviewLinks,
   detectReviewAppendix,
@@ -79,7 +80,7 @@ describe("quick review input", () => {
     expect(data.collection).toBe("Edge AI")
     expect(data.count).toBe(1)
     expect(Object.keys(data.papers[0]).sort()).toEqual(
-      ["abstract", "abstractState", "appendix", "authors", "doi", "index", "links", "publication", "tags", "title", "year"].sort(),
+      ["abstract", "abstractState", "appendix", "appendixMarked", "authors", "doi", "index", "links", "publication", "tags", "title", "year"].sort(),
     )
     // 链接原文随数据送出，模型才不需要凭记忆猜网址。
     expect(data.papers[0].links).toEqual(["https://yushi-du.github.io/COLA/"])
@@ -148,6 +149,25 @@ describe("review link discovery", () => {
       "https://supermimic.github.io",
       "https://github.com/NVLabs/ReActor",
     ])
+  })
+
+  it("takes hyperlink annotations from the opening pages and drops citations", () => {
+    // 文字层抽不出网址时，作者的项目页只存在于注释里；参考列表页的仓库则不属于这篇。
+    expect(extractAnnotationReviewLinks([
+      { page: 1, url: "https://bopi-loco.github.io/" },
+      { page: 2, url: "https://github.com/AIGeeksGroup/RFPO" },
+      { page: 9, url: "https://github.com/someone/cited-tool" },
+      { page: 1, url: "https://orcid.org/0009-0001-6591-8803" },
+      { page: 1, url: "https://arxiv.org/abs/2610.13087v1" },
+      { page: 1, url: "https://doi.org/10.1145/3197517.3201311" },
+      { page: 1, url: "https://www.youtube.com/watch?v=abc" },
+      { page: 1, url: "https://github.com/" },
+    ])).toEqual(["https://bopi-loco.github.io/", "https://github.com/AIGeeksGroup/RFPO"])
+    // 同一页里的重复注释只留一条；带尾斜杠与不带的是同一地址。
+    expect(extractAnnotationReviewLinks([
+      { page: 1, url: "https://supermimic.github.io/" },
+      { page: 1, url: "https://supermimic.github.io" },
+    ])).toHaveLength(1)
   })
 
   it("merges url, extra and attachment hits into one deduped list", () => {

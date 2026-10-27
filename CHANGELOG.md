@@ -1,5 +1,16 @@
 # 更新说明 / Changelog
 
+## 0.6.13.8 — 2026-10-27
+
+- 直接读 PDF 的超链接注释。用户那篇《Expressive Whole-Body Control for Humanoid Robots》第一页明明印着 `https://expressive-humanoid.github.io`，文字层却抽不到——因为不少论文把项目主页排成图形、分段文字或带字形问题的字体。本机 36 个 PDF 里，超链接注释共 610 条，其中 572 条在文字层里找不到对应网址。现在每篇附件的第 1～2 页会额外调用 `getAnnotations()` 取 `Link` 注释，与文字层结果合并去重；复检：注释通道在文字层之外多找出 8 条链接，涉及 7 篇论文（多是作者自己的 `*.github.io` 项目页与仓库）。
+- 注释通道沿用文字层的噪声过滤，并加两条专有规则：身份／视频／社交站点（orcid、crossmark、YouTube、X、Bilibili 等）不进证据，期刊自己的 `/article/doi/…` 落地页也不算资源。只看前两页，是为了把参考文献列表里的仓库排除在外——体检里一条 `github.com/...` 出现在第 9 页，正是引文。每篇链接上限 4→6，注释与文字层各占几条，4 条在真实样本里会把项目页挤掉。
+- 「什么都没发现」不再是一片空白。每篇卡片新增一行本机证据：`附件：读了 13 页 · 发现链接 1 条 · 附录小节 3 节`；没链接写「未见链接」，没附录写「未见附录」，本次没扫的卡片写「附件：本次未扫描」。文献清单的徽章也补齐「附件已扫 N 页，未见链接」和「有附录（未列小节）」。
+- 读到附录标记但排不出小节标题时不再当作没有附录。真实样本里 `Appendix`／`Supplementary Material`／`附录` 之后常是整段正文或不分编号的小节。现在这类论文带 `appendixMarked` 标记：结果卡片与清单显示「有附录（未列小节）」，提示词允许说「有附录」但禁止说有几节或猜标题，扫描回执补一句「另有 N 篇读到附录标记但没排出小节标题」。标记正则同时修好了中文行（`附录：` 后跟 CJK 时旧的 `\b` 边界不成立）与「附录：A. 额外实验」这种标记加标题同一行的写法。体检：36 个 PDF 里读到附录标记 8 篇，其中排出小节标题 6 篇（上一版 3 篇）。
+- 历史记录保存 `attachmentScanned`／`scanPages`／`appendixMarked`，重开旧记录时证据行与徽章按当时的扫描结果复原；旧记录没有这些字段则不显示证据行。
+- 隐私与计费不变：注释通道只取 URL 文本，正文依旧一句不出机器，也不打开任何链接；仍是一次派发、沿用「文献解析」功能模型，BYOK 未确认结果不自动重发，错误投影只给错误码／HTTP 状态／类名。
+- Read PDF hyperlink annotations directly. The reported paper prints `https://expressive-humanoid.github.io` on page 1 yet the text layer never yields it, because many papers typeset project URLs as graphics, split runs or with broken font maps. Across 36 local PDFs there are 610 link annotations and 572 of them have no counterpart in extracted text. Pages 1–2 of every attachment now also go through `getAnnotations()` and merge `Link` targets with text-layer results: the annotation channel contributes 8 links the text layer never sees, across 7 papers. The channel reuses the text-layer noise filters plus two of its own (identity/video/social hosts are dropped; a journal's own `/article/doi/…` landing page is not a resource) and only reads the first two pages so repositories inside the reference list stay out. The per-paper link cap moves from 4 to 6.
+- A paper that yields nothing now says so. Every card gets a local evidence line (`Attachment: read 13 pages · 1 link · 3 appendix sections`), with explicit "no links", "no appendix" and "not scanned" wording, and the paper list gains matching badges. A paper whose PDF only marks an appendix without numbered section titles is flagged `appendixMarked`: the card says "appendix present (sections unnumbered)", the model may say the paper has an appendix but not how many sections or guess titles, and the scan summary counts them separately. Appendix detection now stands at 8 of 36 papers marked, 6 with section titles (up from 3). History records persist the scan tallies so reopening an old review restores the same evidence line. Privacy and billing are unchanged: only URL text and appendix titles leave the machine, no link is opened, one dispatch per run, no auto-resend on unconfirmed BYOK results.
+
 ## 0.6.13.7 — 2026-10-27
 
 - 取证改为整篇读，不再只读首尾页。用插件同一套函数扫本机 36 个真实 PDF 做体检，抓到一类确凿的漏检：一篇 15 页的《Modeling and Understanding Neural Weights of Humanoid Policies》有 8 个附录小节，全部位于中间页，"第一页＋最后六页"一个都读不到。实测全文抽取一篇 27 页 45.7 MB 的 PDF 只要 313 ms、最慢的一篇 972 ms，省这点时间毫无意义，所以现在整篇都读（超过 80 页取首尾两半）。复检结果：36 篇里"读全文能抽到、读取证页抽不到"的链接 0 条、附录小节 0 节。

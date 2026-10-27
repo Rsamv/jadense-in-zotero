@@ -27,6 +27,11 @@ export type QuickReviewRecordPaper = {
   links?: string[]
   /** 0.6.13.6 起保存附录小节标题，历史点开才能复原"有附录"这条本机证据。 */
   appendix?: string[]
+  /** 0.6.13.8 起保存附录标记：标题排不出编号时，"有附录"这件事仍然要在历史里成立。 */
+  appendixMarked?: boolean
+  /** 0.6.13.8 起保存扫描账目：历史点开时能看出当时读过多少页、是否压根没扫。 */
+  attachmentScanned?: boolean
+  scanPages?: number
 }
 
 /** 结构化正文：历史点开时能复原逐篇卡片，而不只有一段纯文本。 */
@@ -106,6 +111,9 @@ function normalizePaper(value: unknown): QuickReviewRecordPaper | null {
     ...(state === "full" || state === "truncated" || state === "omitted" || state === "missing" ? { abstractState: state } : {}),
     ...(Array.isArray(row?.links) && row.links.length ? { links: normalizeReviewLinks(row.links.filter((link): link is string => typeof link === "string")) } : {}),
     ...(Array.isArray(row?.appendix) && row.appendix.length ? { appendix: mergeReviewAppendix(row.appendix.filter((line): line is string => typeof line === "string")) } : {}),
+    ...(row?.appendixMarked === true ? { appendixMarked: true } : {}),
+    ...(typeof row?.attachmentScanned === "boolean" ? { attachmentScanned: row.attachmentScanned } : {}),
+    ...(typeof row?.scanPages === "number" && Number.isFinite(row.scanPages) && row.scanPages >= 0 ? { scanPages: Math.round(row.scanPages) } : {}),
   }
 }
 
@@ -208,6 +216,9 @@ export function quickReviewRecordView(record: QuickReviewRecord): { result: Quic
     abstractState: paper.abstractState ?? "full",
     ...(paper.links?.length ? { links: paper.links } : {}),
     ...(paper.appendix?.length ? { appendix: paper.appendix } : {}),
+    ...(paper.appendixMarked === true ? { appendixMarked: true } : {}),
+    ...(typeof paper.attachmentScanned === "boolean" ? { attachmentScanned: paper.attachmentScanned } : {}),
+    ...(typeof paper.scanPages === "number" ? { scanPages: paper.scanPages } : {}),
   }))
   return {
     papers,

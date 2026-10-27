@@ -279,8 +279,8 @@ it('shows appendix titles from the local pages without wiping the user tick mark
   const { review, root, labeled } = mount(3)
   state.scan.mockImplementation(async ({ rows }: { rows: ReviewPaperRow[] }) => ({
     rows: rows.map((row, position) => position === 0
-      ? { ...row, links: ['https://expressive-humanoid.github.io'], appendix: ['A. Motion Dataset Selection', 'B. Additional Training Details'], attachmentScanned: true }
-      : { ...row, attachmentScanned: true }),
+      ? { ...row, links: ['https://expressive-humanoid.github.io'], appendix: ['A. Motion Dataset Selection', 'B. Additional Training Details'], attachmentScanned: true, scanPages: 13 }
+      : { ...row, attachmentScanned: true, scanPages: 8 }),
     scanned: rows.length, parsed: rows.length - 1, found: 1, withAppendix: 1, noAttachment: 0, pages: 26, oversize: 1, unreadable: 0, parserMissing: false, readerMissing: false,
   }))
   await review.open([1])
@@ -295,6 +295,9 @@ it('shows appendix titles from the local pages without wiping the user tick mark
   // 扫描回执在结果之后仍然可见：不然"没扫到链接"会被读成"论文没有链接"。取消勾选的那篇不进扫描。
   expect(statusText(root)).toContain('读了 1 篇 PDF 共 26 页')
   expect(statusText(root)).toContain('1 篇超过 60 MB')
+  // 每篇卡片都写出扫描账目：0 条也要写，否则沉默会被读成"没扫"。
+  expect([...root.querySelectorAll('.jdx-review-evidence')].map(node => node.textContent))
+    .toContain('附件：读了 13 页 · 发现链接 1 条 · 附录小节 2 节')
   review.dispose()
 })
 

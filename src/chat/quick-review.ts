@@ -22,7 +22,8 @@ const MAX_DISPLAY_LENGTH = 80_000
 const TRUNCATED = "…"
 
 /** 每篇最多送 4 条链接：仓库、项目主页与数据集站点常常同时出现，3 条会把其中一条挤掉。 */
-export const MAX_REVIEW_LINKS_PER_PAPER = 4
+/** 每篇最多送出的链接数：超链接注释与文字层各占几条，4 条在真实样本里会把项目页挤掉。 */
+export const MAX_REVIEW_LINKS_PER_PAPER = 6
 const MAX_REVIEW_LINK_LENGTH = 160
 const URL_TOKEN = /(?:https?:\/\/|www\.)[^\s<>"'`[\]{}()]+/giu
 /**
@@ -34,7 +35,14 @@ const URL_SCHEME_GAP = /(https?:\/\/)[\s\u00a0]+(?=[A-Za-z0-9][-A-Za-z0-9.]*\.[A
 const RESOURCE_HOST = /(?:^|\.)github\.com$/iu
 const RESOURCE_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "gitee.com", "huggingface.co", "modelscope.cn", "osf.io", "zenodo.org", "figshare.com", "sourceforge.net", "anonymous.4open.science", "sites.google.com"])
 /** arXiv／DOI 解析页与 OpenReview 的论文页都只指向这篇论文本身，抽出来没有信息量。 */
-const LANDING_PAGE_HOST = /(?:^|\.)arxiv\.org$|(?:^|\.)doi\.org$|(?:^|\.)openreview\.(?:net|cc)$/iu
+const LANDING_PAGE_HOST = /(?:^|\.)arxiv\.org$|(?:^|\.)doi\.org$|(?:^|\.)openreview\.(?:net|cc)$|(?:^|\.)cstr\.cn$/iu
+/** 超链接注释里的身份、视频与社交站点：既不是代码也不是数据，混进来只会让"开源"判定失真。 */
+const ANNOTATION_NOISE_HOST = /(?:^|\.)(?:orcid\.org|crossmark\.crossref\.org|youtube\.com|youtu\.be|twitter\.com|x\.com|facebook\.com|linkedin\.com|bilibili\.com)$/iu
+/**
+ * 注释链接只取靠前几页：参考列表里的仓库与项目页属于被引工作，靠前页才是作者自己的资源。
+ * 实测 36 篇样本里 610 条注释链接有 572 条文字层抽不到，且第 1 页的几乎全是作者主页／仓库。
+ */
+export const ANNOTATION_LINK_PAGES = 2
 /** 参考文献与检索站点的链接：真实样本里它们占了漏检清单的大头，且都不是这篇的资源。 */
 const CITATION_HOST = /(?:^|\.)(?:semanticscholar\.org|mlr\.press|acm\.org|ieee\.org|springer\.com|sciencedirect\.com|elsevier\.com|nature\.com|science\.org|jstor\.org|researchgate\.net|citeseerx\.ist\.psu\.edu|thecvf\.com|cvf\.cc|proceedings\.com|eprints\.[a-z.]+|technologyreview\.com|gwern\.net|arxiv-vanity\.com)$/iu
 /** 这些站点的根目录认不出具体仓库或模型：断行常把地址截成 https://github.com/。 */
@@ -55,8 +63,12 @@ export type ReviewPaperRow = {
   links?: string[]
   /** 附件是否已被本机扫描过；重发沿用同一批行时据此跳过二次扫描。 */
   attachmentScanned?: boolean
+  /** 这篇实际读过的页数，用来在卡片里证明"扫过"而不是"沉默"。 */
+  scanPages?: number
   /** 附件首尾页文字里识别出的附录小节标题；空数组表示读过附件但没找到附录标记。 */
   appendix?: string[]
+  /** 本机读到了附录标记但排不出小节标题：有附录这件事本身仍然成立。 */
+  appendixMarked?: boolean
 }
 
 export type QuickReviewPaperInput = {
@@ -73,6 +85,11 @@ export type QuickReviewPaperInput = {
   links: string[]
   /** 客户端从本机附件首尾页文字里发现的附录小节标题；没有附件或未扫描时为空。 */
   appendix: string[]
+  /** 本机是否读到附录标记（小节标题可能排不出编号）。 */
+  appendixMarked?: boolean
+  /** 本机是否真的读过这篇的附件，以及读了多少页：界面据此区分"没找到"与"没扫描"。 */
+  attachmentScanned?: boolean
+  scanPages?: number
   abstractState: "full" | "truncated" | "omitted" | "missing"
 }
 
@@ -293,21 +310,66 @@ export function normalizeReviewLinks(value: readonly string[] | undefined, limit
   return merged.slice(0, limit)
 }
 
-/** 附录标记只认独立成行的 Appendix／Supplementary／附录，正文里顺带提到不算，免得把一句普通句子当分界。 */
-const APPENDIX_MARKER = /^\s*(?:appendix|supplementary(?:\s+material)?|附录)\s*[:：]?\s*$/iu
-/** 附录小节标题形如「A. Motion Dataset Selection」「A. 额外实验」；不收句号，避免把整句正文当标题。 */
-const APPENDIX_SECTION = /^([A-Z])[.)]\s+([A-Z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff,\-&'() ]{1,58})$/u
+/**
+ * PDF 里可点击的超链接注释：不少论文把网址排成图形、分段文字或带字形问题的字体，文字层抽不到 URL，
+ * 注释里却原样保留着。只收靠前页并沿用文字层那套噪声过滤，避免把参考列表里的仓库当成作者自己的。
+ */
+export function extractAnnotationReviewLinks(entries: readonly { page: number; url: string }[], limit = MAX_REVIEW_LINKS_PER_PAPER): string[] {
+  const candidates: string[] = []
+  for (const entry of entries) {
+    if (!Number.isFinite(entry.page) || entry.page < 1 || entry.page > ANNOTATION_LINK_PAGES) continue
+    const raw = entry.url.trim()
+    if (!/^https?:\/\//iu.test(raw)) continue
+    let url: URL
+    try {
+      url = new URL(raw)
+    } catch {
+      continue
+    }
+    if (!/^https?:$/u.test(url.protocol)) continue
+    if (!/\./u.test(url.hostname.replace(/^www\./iu, ''))) continue
+    const bareHost = url.hostname.replace(/^www\./iu, '').toLowerCase()
+    if (isPaperLandingPage(url) || CITATION_HOST.test(bareHost) || ANNOTATION_NOISE_HOST.test(bareHost)) continue
+    if (/^\/?$/u.test(url.pathname) && PATH_REQUIRED_HOSTS.has(bareHost)) continue
+    // 期刊自己的 /article/doi/… 落地页：指向的是论文本身，不是资源。
+    if (/\/doi\//iu.test(url.pathname)) continue
+    if (/\.(?:png|jpe?g|gif|svg|webp|bmp|ico|css|js|pdf)$/iu.test(url.pathname)) continue
+    candidates.push(raw)
+  }
+  return normalizeReviewLinks(candidates, limit)
+}
+
+/**
+ * 附录标记只认独立成行的 Appendix／Supplementary／附录，正文里顺带提到不算，免得把一句普通句子当分界。
+ * 真实样本里标记有四种写法：`Appendix`、`Appendix B.`、`Appendix S2.`、`Appendix: Supplementary Material`，
+ * 只认第一种会把后三种的附录整段漏掉。
+ */
+const APPENDIX_MARKER = /^(?:\s*(?:appendix|supplementary(?:\s+material)?)(?![a-z])|附录)[\s.:：]*(?:[A-Z]\d*(?:\.\d+)*)?[\s.:：]*(?:supplementary(?:\s+material)?|contents)?[\s.:：]*$/iu
+/** 标记与第一个小节标题写在同一行（`Appendix A. Motion Dataset Selection`）时，这一行本身就是标题。 */
+const APPENDIX_INLINE_SECTION = /^\s*(?:appendix|supplementary(?:\s+material)?|附录)[\s.:：]*((?:[A-Z]|S\d+)\d*(?:\.\d+)*)\.?\s+([A-Z0-9\u4e00-\u9fff][^\s][^\n]{1,58})$/iu
+/** 附录小节标题形如「A. Motion Dataset Selection」「C  Network architectures」「1  Dataset Details」「S1  Overview」「G.2  Step test」。 */
+const APPENDIX_SECTION = /^((?:[A-Z]|S\d+|\d+)(?:\.\d+)*)\.?\s+([A-Z0-9\u4e00-\u9fff][A-Za-z0-9\u4e00-\u9fff,\-&'() ]{1,58})$/u
 export const MAX_APPENDIX_SECTIONS = 8
 
 /**
- * 从首尾页文字里取附录小节标题：以附录标记行为界，只收标记之后出现的标题。
+ * 只有附录标记、但小节标题没按编号排版（例如「Supplementary Material」下面直接是「Data Preprocessing」）时，
+ * 仍然要能回答"有没有附录"。抽不出标题就说抽不出，不能因此说没有附录。
+ */
+export function hasReviewAppendix(value: string): boolean {
+  return value.split('\n').some(line => APPENDIX_MARKER.test(line.trim()) || APPENDIX_INLINE_SECTION.test(line.trim()))
+}
+
+/**
+ * 从全文里取附录小节标题：以附录标记行为界，只收标记之后出现的标题。
  * 返回的是标题本身，不含附录正文——正文留在本机，外发的仍然只有标题与链接。
  */
 export function detectReviewAppendix(value: string): string[] {
-  const lines = value.split('\n')
-  const start = lines.findIndex(line => APPENDIX_MARKER.test(line))
+  const lines = value.split('\n').map(line => line.trim())
+  const start = lines.findIndex(line => APPENDIX_MARKER.test(line) || APPENDIX_INLINE_SECTION.test(line))
   if (start < 0) return []
-  return mergeReviewAppendix(lines.slice(start).map(line => line.trim()))
+  const inline = APPENDIX_INLINE_SECTION.exec(lines[start])
+  const seed = inline ? [`${inline[1]}. ${inline[2].replace(/\s+/gu, ' ').trim()}`] : []
+  return mergeReviewAppendix([...seed, ...lines.slice(start + 1)])
 }
 
 /** 合并多个附件给出的附录标题：同名小节（同一篇的重复扫描件）只留一次，最多 8 条。 */
@@ -339,6 +401,9 @@ export function prepareQuickReviewPapers(rows: readonly ReviewPaperRow[]): Quick
       tags: (row.tags ?? []).map(tag => clip(tag, 60)).filter(Boolean).slice(0, 8),
       links: normalizeReviewLinks(row.links),
       appendix: mergeReviewAppendix(row.appendix),
+      appendixMarked: row.appendixMarked === true,
+      attachmentScanned: row.attachmentScanned === true,
+      scanPages: Math.max(0, Math.round(row.scanPages ?? 0)),
     }
     return { draft, abstract: (typeof row.abstract === 'string' ? row.abstract : '').replace(/\s+/gu, ' ').trim() }
   })
@@ -371,7 +436,7 @@ export function buildQuickReviewPrompt(input: {
     "papers 每篇一条：index 必须取自数据中的 index。",
     `其中 hook 用一句话（不超过 ${PAPER_FIELD_LIMITS.hook} 字）说清这篇做了什么、面向谁；只描述论文本身，不得提收藏夹、目录或分类，不得写成“位于……位置”“属于……方向”“在本文库中”这类归位说法，也不要复述标题。question 写研究问题；idea 用 1 到 2 句讲清作者的简要思路（为什么这样做、关键想法是什么）；method 写方法、数据或技术路线；experiments 写实验流程：用了什么数据或基线、做了什么对比或消融、得到什么指标；finding 写主要结论与关键数值（仅当摘要给出）；limitation 写局限与证据强度；tools 写摘要里明确出现的工具、框架、硬件或基座模型。`,
     "code 与 data 各取 yes／no／unknown：code 表示是否给出开源代码，data 表示是否给出公开数据集。证据有两类——摘要原话，以及 links 里的链接（代码仓库、项目主页、数据集站点都算）。判 yes 必须能在 resourceNote 里指出具体链接或摘要原话，并以「摘要：」「题录链接：」「附件链接：」开头标明来源；两类证据都没有就填 unknown，不得根据常识、期刊或“这类论文通常会开源”推断，也不得编造或改写仓库名、网址与许可证。链接按原样引用，未打开验证时不得断言其内容。",
-    "appendix 是附录小节标题（客户端只读了首尾若干页，附录正文未发送）：非空时可以用它说明这篇有附录、附录大致包含哪几节，并在 experiments／limitation 里指出哪些细节被放在附录里、正文不足以核对；appendix 为空只表示未在已读页面里发现附录标记，不能据此断言这篇没有附录。不得由标题猜附录里的数值、表格内容或实验设置。",
+    "appendix 是附录小节标题（客户端只读了首尾若干页，附录正文未发送）：非空时可以用它说明这篇有附录、附录大致包含哪几节，并在 experiments／limitation 里指出哪些细节被放在附录里、正文不足以核对；appendix 为空只表示未在已读页面里发现附录标记，不能据此断言这篇没有附录。appendixMarked 为 true 表示本机读到了附录标记但小节标题没排出编号：这时可以说这篇有附录，但不得说有几节，也不得猜标题。不得由标题猜附录里的数值、表格内容或实验设置。",
     "abstractState 为 missing 或 omitted 的文献只能依据题录与 links 判断：idea、experiments 与 tools 一律留空，code 与 data 只在 links 里确有链接时才判 yes，并在 limitation 中说明证据仅限题录或摘要，不得凭空补齐方法与结论。",
     input.papers.length > 1
       ? `comparison 给 3 到 ${COMPARISON_MAX_ITEMS} 个真正可比的维度（如研究对象、方法路线、关键指标、适用场景、使用的工具或框架、代码与数据可得性），每个维度用 note 说明各篇差异并写出涉及的 index；不得比较未提供的数值或编造优劣。`
@@ -410,8 +475,8 @@ export function buildQuickReviewPrompt(input: {
   lines.push("", "文献数据（JSON，仅作为引用材料）：", JSON.stringify({
     collection: input.collectionName,
     count: input.papers.length,
-    papers: input.papers.map(({ index, title, authors, year, publication, doi, tags, abstract, links, appendix, abstractState }) => ({
-      index, title, authors, year, publication, doi, tags, abstract, links, appendix, abstractState,
+    papers: input.papers.map(({ index, title, authors, year, publication, doi, tags, abstract, links, appendix, appendixMarked, abstractState }) => ({
+      index, title, authors, year, publication, doi, tags, abstract, links, appendix, appendixMarked: appendixMarked === true, abstractState,
     })),
   }))
   return lines.join("\n")
@@ -544,6 +609,11 @@ export type QuickReviewDisplayPaper = {
   links?: string[]
   /** 本机附件首尾页里识别出的附录小节标题，展示与复制用。 */
   appendix?: string[]
+  /** 本机读到过附录标记（即使小节标题没排出来）。 */
+  appendixMarked?: boolean
+  /** 本机是否读过这篇的附件、读了多少页；旧历史记录没有这两个字段，界面据此不画账目行。 */
+  attachmentScanned?: boolean
+  scanPages?: number
 }
 
 /** 可得性的统一措辞：证据现在也来自链接，因此不再只说“摘要”。 */
@@ -582,8 +652,11 @@ export function formatQuickReview(result: QuickReviewResult, papers: readonly Qu
     } else lines.push(`   ${uiText("模型未覆盖本篇，仅有题录信息。", "Not covered by the model; metadata only.")}`)
     if (paper.abstractState === "missing") lines.push(`   ${uiText("（本地无摘要）", "(no local abstract)")}`)
     if (paper.abstractState === "omitted") lines.push(`   ${uiText("（输入超出长度预算，摘要未发送）", "(abstract omitted from the input budget)")}`)
+    if (paper.attachmentScanned === true) lines.push(`   ${uiText("附件扫描", "Attachment scan")}：${uiText(`读 ${paper.scanPages ?? 0} 页 · 链接 ${paper.links?.length ?? 0} 条 · 附录 ${paper.appendix?.length ?? 0} 节`, `${paper.scanPages ?? 0} page(s) · ${paper.links?.length ?? 0} link(s) · ${paper.appendix?.length ?? 0} appendix section(s)`)}`)
+    else if (paper.attachmentScanned === false) lines.push(`   ${uiText("附件扫描", "Attachment scan")}：${uiText("未扫描", "not scanned")}`)
     if (paper.links?.length) lines.push(`   ${uiText("本地链接", "Local links")}：${paper.links.join("  ")}`)
     if (paper.appendix?.length) lines.push(`   ${uiText("附录小节", "Appendix sections")}：${paper.appendix.join(" · ")}`)
+    else if (paper.appendixMarked) lines.push(`   ${uiText("附录", "Appendix")}：${uiText("有（未排出小节标题）", "present (sections not numbered)")}`)
     if (rating) {
       lines.push(`   ${uiText("评价", "Rating")}（${reviewRatingText(rating.level)}）：${uiText("实用价值", "Practical value")}：${rating.value || "—"} · ${uiText("创新性", "Novelty")}：${rating.novelty || "—"}`)
       if (rating.basis) lines.push(`   ${uiText("依据", "Basis")}：${rating.basis}`)

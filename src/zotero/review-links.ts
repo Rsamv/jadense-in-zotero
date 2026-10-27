@@ -1,11 +1,12 @@
 /**
  * 快速解析的开源链接发现：题录字段那一路在 collectReviewRows 里完成，这里只补附件那一路。
- * 只解析 PDF 首页与末尾几页的文字，并且只保留抽出来的链接文本与附录小节标题——正文不外发，也不打开任何链接。
+ * 两条证据通道：页面文字里的网址，以及 PDF 的超链接注释（文字层抽不出网址时注释仍保留原地址）。
+ * 只保留链接文本与附录小节标题——正文不外发，也不打开任何链接。
  */
-import { detectReviewAppendix, extractReviewLinks, mergeReviewAppendix, normalizeReviewLinks, type ReviewPaperRow } from '@/chat/quick-review'
+import { ANNOTATION_LINK_PAGES, detectReviewAppendix, extractAnnotationReviewLinks, extractReviewLinks, hasReviewAppendix, mergeReviewAppendix, normalizeReviewLinks, type ReviewPaperRow } from '@/chat/quick-review'
 import { uiText } from './ui-preferences'
 import type { ZoteroLike } from './runtime'
-import { evidencePageNumbers, loadPdfModule, pdfModuleBase, readPdfPagesText } from './pdf-module'
+import { evidencePageNumbers, loadPdfModule, pdfModuleBase, readPdfPageLinks, readPdfPagesText } from './pdf-module'
 
 /** 会议论文 PDF 常见 25～50 MB：上限太低会把最该扫的附件静默跳过。 */
 const MAX_ATTACHMENT_BYTES = 60_000_000
@@ -65,15 +66,15 @@ async function attachmentPath(attachment: NativeRecord): Promise<string> {
 }
 
 /** 单个附件：读盘 → 解析取证页 → 抽链接与附录标题；失败只算这一篇没有附加证据，并说明卡在哪一步。 */
-async function attachmentScan(read: (path: string) => Promise<ArrayBuffer | Uint8Array>, pdfjs: Awaited<ReturnType<typeof loadPdfModule>>, path: string, base: string): Promise<{ links: string[]; appendix: string[]; pages: number; outcome: AttachmentOutcome }> {
+async function attachmentScan(read: (path: string) => Promise<ArrayBuffer | Uint8Array>, pdfjs: Awaited<ReturnType<typeof loadPdfModule>>, path: string, base: string): Promise<{ links: string[]; appendix: string[]; marked: boolean; pages: number; outcome: AttachmentOutcome }> {
   let data: Uint8Array
   try {
     const raw = await read(path)
     data = raw instanceof Uint8Array ? raw : new Uint8Array(raw)
   } catch {
-    return { links: [], appendix: [], pages: 0, outcome: "unreadable" }
+    return { links: [], appendix: [], marked: false, pages: 0, outcome: "unreadable" }
   }
-  if (data.byteLength > MAX_ATTACHMENT_BYTES) return { links: [], appendix: [], pages: 0, outcome: "oversize" }
+  if (data.byteLength > MAX_ATTACHMENT_BYTES) return { links: [], appendix: [], marked: false, pages: 0, outcome: "oversize" }
   const task = pdfjs.getDocument({
     data,
     isEvalSupported: false,
@@ -86,9 +87,11 @@ async function attachmentScan(read: (path: string) => Promise<ArrayBuffer | Uint
     const pdf = await task.promise
     const pages = evidencePageNumbers(pdf.numPages, MAX_PAGES_PER_ATTACHMENT)
     const text = await readPdfPagesText(pdf, pages)
-    return { links: extractReviewLinks(text), appendix: detectReviewAppendix(text), pages: pages.length, outcome: "parsed" }
+    // 文字层抽不出网址的论文，超链接注释里往往还留着：只取靠前页，避免参考列表里的仓库混进来。
+    const annotationLinks = extractAnnotationReviewLinks(await readPdfPageLinks(pdf, pages.filter(page => page <= ANNOTATION_LINK_PAGES)))
+    return { links: normalizeReviewLinks([...extractReviewLinks(text), ...annotationLinks]), appendix: detectReviewAppendix(text), marked: hasReviewAppendix(text), pages: pages.length, outcome: "parsed" }
   } catch {
-    return { links: [], appendix: [], pages: 0, outcome: "unreadable" }
+    return { links: [], appendix: [], marked: false, pages: 0, outcome: "unreadable" }
   } finally {
     await task.destroy()
   }
@@ -113,6 +116,8 @@ export type QuickReviewScanReport = {
   noAttachment: number
   /** 本轮实际读过的页数，用来说明"扫过了"到底扫了多少。 */
   pages: number
+  /** 读到附录标记的篇数：小节标题排不出编号时，这一项仍然说明"有附录"。 */
+  marked: number
   oversize: number
   unreadable: number
   /** PDF 解析模块加载失败：整轮一条证据都没抽，不能把行标成已扫描。 */
@@ -128,7 +133,7 @@ export async function scanRowsForAttachmentLinks(input: {
   signal?: AbortSignal
   onProgress?: (message: string) => void
 }): Promise<QuickReviewScanReport> {
-  const empty: QuickReviewScanReport = { rows: [...input.rows], scanned: 0, parsed: 0, found: 0, withAppendix: 0, noAttachment: 0, pages: 0, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false }
+  const empty: QuickReviewScanReport = { rows: [...input.rows], scanned: 0, parsed: 0, found: 0, withAppendix: 0, marked: 0, noAttachment: 0, pages: 0, oversize: 0, unreadable: 0, parserMissing: false, readerMissing: false }
   const targets = input.rows.filter(row => !row.attachmentScanned)
   if (!targets.length) return empty
   const base = pdfModuleBase(input.doc)
@@ -150,10 +155,14 @@ export async function scanRowsForAttachmentLinks(input: {
   }
   const links = new Map<string, string[]>()
   const appendix = new Map<string, string[]>()
+  const marked = new Set<string>()
+  /** 每篇读过多少页：卡片上要能写出这个数，"扫过"才不是一句空话。 */
+  const rowPages = new Map<string, number>()
   const done = new Set<string>()
   let scanned = 0
   let parsed = 0
   let withAppendix = 0
+  let markedCount = 0
   let noAttachment = 0
   let pages = 0
   let oversize = 0
@@ -178,7 +187,9 @@ export async function scanRowsForAttachmentLinks(input: {
       const scan = await attachmentScan(read, pdfjs, path, base)
       outcomes.push(scan.outcome)
       pages += scan.pages
+      rowPages.set(key, (rowPages.get(key) ?? 0) + scan.pages)
       if (scan.links.length) links.set(key, [...(links.get(key) ?? []), ...scan.links])
+      if (scan.marked) marked.add(key)
       if (scan.appendix.length) appendix.set(key, [...(appendix.get(key) ?? []), ...scan.appendix])
     }
     switch (rowOutcome(outcomes)) {
@@ -196,14 +207,18 @@ export async function scanRowsForAttachmentLinks(input: {
     if (!done.has(key)) return row
     const rowAppendix = mergeReviewAppendix([...(row.appendix ?? []), ...(appendix.get(key) ?? [])])
     if (rowAppendix.length) withAppendix += 1
+    const rowMarked = row.appendixMarked === true || marked.has(key) || rowAppendix.length > 0
+    if (rowMarked) markedCount += 1
     return {
       ...row,
       links: normalizeReviewLinks([...(row.links ?? []), ...(links.get(key) ?? [])]),
       appendix: rowAppendix,
+      appendixMarked: rowMarked,
       attachmentScanned: true,
+      scanPages: (row.scanPages ?? 0) + (rowPages.get(key) ?? 0),
     }
   })
-  return { rows, scanned, parsed, found: links.size, withAppendix, noAttachment, pages, oversize, unreadable, parserMissing: false, readerMissing: false }
+  return { rows, scanned, parsed, found: links.size, withAppendix, marked: markedCount, noAttachment, pages, oversize, unreadable, parserMissing: false, readerMissing: false }
 }
 
 /**
@@ -216,6 +231,8 @@ export function quickReviewScanNotice(report: QuickReviewScanReport): string {
   if (!report.scanned) return ''
   const parts = [uiText(`附件扫描：读了 ${report.parsed} 篇 PDF 共 ${report.pages} 页`, `Attachment scan: ${report.parsed} PDF(s), ${report.pages} page(s) read`)]
   parts.push(uiText(`发现 ${report.found} 条链接、${report.withAppendix} 篇有附录小节`, `${report.found} link(s) and appendix titles in ${report.withAppendix} paper(s) found`))
+  // 只认得出附录标记、排不出小节编号的篇目也要说：否则"有附录但没列标题"会被读成"没有附录"。
+  if (report.marked > report.withAppendix) parts.push(uiText(`另有 ${report.marked - report.withAppendix} 篇读到附录标记但没排出小节标题`, `${report.marked - report.withAppendix} further paper(s) have an appendix marker without numbered sections`))
   const gaps: string[] = []
   if (report.noAttachment) gaps.push(uiText(`${report.noAttachment} 篇没有可读的 PDF 附件`, `${report.noAttachment} had no readable PDF attachment`))
   if (report.oversize) gaps.push(uiText(`${report.oversize} 篇超过 60 MB`, `${report.oversize} over 60 MB`))
