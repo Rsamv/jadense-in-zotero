@@ -19,3 +19,6 @@ content/ocr/.cache/
 # Python packaging/test bytecode is local runtime output.
 __pycache__/
 *.py[cod]
+
+# Local npm lock: this repo ships pnpm-lock.yaml upstream.
+package-lock.json

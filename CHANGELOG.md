@@ -1,5 +1,76 @@
 # 更新说明 / Changelog
 
+## 0.6.13.5 — 2026-10-27
+
+- 逐篇评价改用固定档位锚点。同一批文献每次给出的评价不一样，原因在模型侧的采样：插件的提示词本身是确定生成的，全仓库也没有 `temperature`／`top_p`／`seed` 任何一项。本版不动请求体（保持 BYOK 请求构造原样），改的是判档口径：`high`／`medium`／`low`／`unclear` 各写死判据（例如 `low`＝换骨干、调超参、加一个模块这类增量改动，`unclear`＝材料不足或缺摘要），并要求「不要为了拉开差距而分档」。
+- 评价允许结合模型自己的知识。`value`／`novelty` 可以引用你对该方向已有工作、常见做法与后续影响的了解，不必只盯摘要；但 `basis` 必须逐句标来源——「摘要：」「链接：」「知识：」，凭记忆而材料未证实的部分要写「AI 推断，需核对」，也不得拿未提供的数值支撑档位。缺摘要的条目仍在锚点里被要求归 `unclear`。
+- 开源代码与数据集改为多路证据查找。发给模型的每篇数据新增 `links` 字段：题录的 `url` 与 `extra` 里的网址会被抽出来；`code`／`data` 判 `yes` 时可在 `resourceNote` 里引用「摘要：」「题录链接：」「附件链接：」任一类来源，两类证据都没有才记 `unknown`，仍禁止编造或改写仓库名与网址。模型只被允许原样引用 `links` 里已经出现的地址，不输出其它网址。
+- 本机附件首尾页解析（新开关「扫描附件找开源链接」，首选项 `extensions.jadenseInZotero.quickReviewScanLinks`，默认开启）。很多文献只在 PDF 首页或文末几页给出项目主页，而库里常常只存了 PDF 本身：现在用插件自带的 pdf.js 只读每篇附件的第一页与最后三页，从文字里抽链接，单附件上限 20 MB、每篇最多 2 个附件，每批只扫一次（授权重发沿用已扫过的那批，不重读盘）。送出去的只有抽到的链接文本，PDF 正文不外发，也不打开任何链接；关掉开关即回到上一版「只发题录与摘要、不读取 PDF」。窗口顶部的说明行会跟着开关改写，明确这次到底带不带附件。
+- 结果卡片与复制全文增加「本地链接」一行，以不可点击的等宽文本展示（不生成 `<a>`，避免误点外部地址）；文献清单里带链接的行标出条数；本机历史记录保存这些链接，重新打开记录时卡片上仍然看得到。
+- 开源徽章措辞修正：证据不再只来自摘要，「摘要明确给出／摘要未提及」改为「明确给出／明确不给／未见说明」。`resourceNote` 上限 100→120（要放得下一条完整网址加来源前缀），评价 `basis` 120→150；提示词里写给模型的长度限制仍与客户端裁剪上限同源生成。
+- 请求次数与计费目的地不变：仍是一次派发、沿用「文献解析」功能模型；BYOK 未确认的执行依旧不自动重发，错误投影依旧只给错误码、HTTP 状态与类名，不回显上游正文或凭据。
+- Ratings now land on fixed level anchors. The same papers getting different ratings every run is provider-side sampling: the plugin's prompt is deterministically generated and nothing in the codebase sets `temperature`, `top_p` or `seed`. This build leaves the request body untouched (the BYOK request construction is unchanged) and instead pins the bands — `high`/`medium`/`low`/`unclear` each carry explicit criteria, with an instruction not to spread grades just to create separation.
+- Ratings may draw on the model's own knowledge of the field, but every sentence in `basis` must be labelled 「摘要：」/「链接：」/「知识：」, and anything recalled without support in the material has to be marked as an AI inference to verify. Unsupported numbers still cannot justify a band, and abstract-less entries still fall to `unclear`.
+- Open-source evidence is now gathered from several sources: each paper carries a `links` field built from the bibliographic `url` and `extra` fields, and `code`/`data` may be justified by an abstract sentence or one of those links, prefixed with abstract / bibliography-link / attachment-link. Only links already present in `links` may be quoted back; nothing else leaves as a URL.
+- A new "Scan attachments for code links" switch (`extensions.jadenseInZotero.quickReviewScanLinks`, on by default) reads only page 1 and the last three pages of each local PDF with the bundled pdf.js — project pages usually live in the first-page footer or the "Code availability" at the end — capped at 20 MB per file and 2 attachments per paper, once per batch. Only the extracted link text is sent; PDF prose never leaves the machine and no link is opened. Turning it off restores the previous "metadata and abstracts only, no PDF reading" behaviour, and the header line in the window states which of the two is about to happen.
+- Result cards and the copied text gained a "Local links" line rendered as selectable, non-clickable monospace text; the paper list shows how many links each row carries, and local history stores them so a reopened record still shows them.
+- Availability badges no longer claim the abstract is the only source: "stated in the abstract" became "stated" / "stated as unavailable" / "not stated". `resourceNote` grew 100→120 so a URL plus its source prefix fits, rating `basis` 120→150, and the limits quoted to the model are still generated from the same constants the client clips with.
+- One dispatch, same paper-analysis model, same billing destination: unconfirmed BYOK executions are still never resent, and error notices still project only code, HTTP status and class name.
+
+## 0.6.13.4 — 2026-10-26
+
+- 快速解析窗口的「收藏夹」和「一次发送」改用插件自绘列表框。上一版给原生 `<select>` 的 `option` 补背景是无效修复：chrome 文档里原生下拉的弹出层是文档内 XUL menupopup，根本不读页面主题，所以选项文字仍与下一行重叠。现在两处都走 `createJdxSelect`，弹层是页面内 `position: fixed` 的不透明层，带边框与投影；收藏夹一项还支持输入关键字筛选。Escape 在弹层展开时只收起弹层，不会再关掉整个窗口。
+- 「一次发送」默认改为前 6 篇（可选 6／12／20／30），超过 12 篇才弹确认。
+- 一次调用的输出预算整体收紧，综述生成等待随之变短：总览 1200→600，逐篇「定位」160→80 并改名「一句话」，问题 240→120，思路／方法／实验流程／结论各 320→160，工具与开源依据各 200→100，横向对比最多 5 个维度且每条说明 900→240、维度名 80→40，趋势与空白各 900→400，逐篇评价的实用价值／创新性 240→140、依据 200→120、总体评价 600→300。四篇含评价的最坏输出从约 22,680 字降到约 9,340 字。提示词里写给模型的长度限制与客户端的裁剪上限改用同一组常量生成，两处不再各说一套。
+- 提示词补一条写作要求：每项写成一到两个短句，不复述摘要原句，不写铺垫和「本文认为」这类填充。
+- 修正「定位」字段的含义。上一版提示词写的是「说明该文献在收藏夹中的位置」，模型于是成片输出「该文位于收藏夹中关于……的研究位置」这种归位套话。现在要求用一句话说清这篇做了什么、面向谁，并明确禁止提收藏夹、目录或分类；发给模型的每篇数据也不再带目录路径，只保留这批文献所属的收藏夹名。界面与复制文本的标签同步改为「一句话」。
+- 生成中的状态行不再整段不动：接收阶段按已收字数补一行「正在接收综述 · 已收到 N 字」，字数有增长且距上次上报不少于 2 秒才更新，不刷日志。
+- 请求次数与计费目的地不变：仍是一次派发、沿用「文献解析」功能模型；BYOK 未确认执行依旧不自动重发，错误投影依旧只给错误码、HTTP 状态与类名。
+- The collection and papers-per-request controls in the quick review window now use the plugin's own list box. The previous round's background fix on native `<option>` could not work: in a chrome document the native popup is an in-document XUL menupopup that never reads the page theme, so option text kept overlapping the line below. Escape now only closes an open popup instead of shutting the whole window.
+- Papers per request default to the first 6 (6/12/20/30), and confirmation is only asked above 12.
+- The per-request output budget was cut across the board, which is what the wait is bound by: overview 1200→600, the per-paper note 160→80 (renamed "In brief"), question 240→120, idea/method/experiments/finding 320→160 each, tools and resource basis 200→100 each, comparison capped at 5 dimensions with notes 900→240 and dimension names 80→40, trends and gaps 900→400 each, rating value/novelty 240→140, basis 200→120 and the overall rating 600→300. The worst case for four papers with ratings drops from about 22,680 characters to about 9,340. The limits written into the prompt and the limits the client clips with are now generated from one set of constants.
+- The "role in the collection" instruction was wrong, so every paper came back as "this paper sits in the collection's position for …". The field now asks for one sentence on what the paper does and for whom, forbids any mention of the collection, folder or classification, and the per-paper payload no longer carries a folder path — only the collection name for the batch.
+- The status line keeps moving while a review streams: a throttled "Receiving the review · N characters so far" appears once the count grows and at least 2 seconds have passed since the last update.
+- Dispatch count and billing destination are unchanged: one request, still the paper-analysis feature model, unconfirmed BYOK executions are still never resent, and error notices still project only code, HTTP status and class name.
+
+## 0.6.13.3 — 2026-10-26
+
+- 快速解析窗口默认更大：按可用屏幕面积的 88% 开窗，最小 1440×820；屏幕本身不够大时退回可用范围，绝不超出屏幕。历史行的标题、时间与「删除」键保持同一水平线。
+- 「一次发送篇数」等下拉框补上不透明背景与边框，展开的选项不再和窗口底色重叠。
+- 提示词新增逐篇「思路」「实验流程」「工具」，并要求分别给出开源代码与数据集情况（`yes`／`no`／`unknown`）及一句话判断依据。模型只能按摘要写明的事实标注：不得按常识、期刊或「通常会开源」推断，不得编造仓库名、网址或许可证；摘要未提及一律记为 `unknown`。界面用颜色徽章区分「摘要明确给出／明确不给／未提及」，复制的纯文本同样保留。
+- 新增「逐篇评价（实用价值、创新性）」勾选：在同一次调用里追加逐篇评价与总体评价，不增加请求次数，也不新增计费目的地。勾选状态写入首选项 `extensions.jadenseInZotero.quickReviewEvaluate`（默认不勾选）。评价与对应的逐篇要点排在同一行，向下浏览时一起滚动，无需两边对照。
+- 评价仍受同一围栏约束：BYOK 未确认的执行依旧不自动重发，用户显式授权重发时沿用这次已锁定的勾选状态；信息不足时评价档位归为「证据不足」，缺摘要的条目被要求只能填该档。
+- 从本机历史重新打开记录时恢复逐篇卡片与评价栏：结构化正文按记录内的序号一并保存，序号对不上题录的要点或评价会被丢弃。0.6.13.3 之前只存整段文字的记录仍原样显示文本，不伪造成卡片。
+- Quick review windows open larger: 88% of the available screen with a 1440×820 floor, falling back to the usable area on smaller screens so the history row's title, timestamp and Remove button stay on one line. The papers-per-request select now has an opaque background instead of overlapping the window.
+- The prompt additionally asks for each paper's idea, experimental setup and tools, plus open-source code and dataset availability (`yes`/`no`/`unknown`) with a one-line basis. Claims must come from what the abstract states: no inference from journal or "usually open-sourced" conventions, and no invented repository names, URLs or licences. Colour badges separate "stated", "stated as unavailable" and "not stated", and the copied text keeps the same wording.
+- A new "Rate each paper (practical value, novelty)" checkbox folds per-paper ratings and an overall assessment into the same single request — no extra dispatch, no new billing destination. The choice persists in `extensions.jadenseInZotero.quickReviewEvaluate` (off by default), and each rating sits on the same row as its digest so both scroll together. Unconfirmed BYOK executions are still never resent, and an authorised resend reuses the locked-in choice.
+- Reopening a saved review restores the per-paper cards and rating column because the structured digest is now stored alongside the record, bound to the record's own paper indexes; anything pointing at an unknown index is dropped. Records saved before 0.6.13.3 keep showing their stored text instead of being faked into cards.
+
+## 0.6.13.2 — 2026-10-26
+
+- 新增「快速解析此收藏夹」：在 Zotero 收藏夹右键打开独立窗口，递归读取该收藏夹及子收藏夹的文献（跳过附件、笔记与回收站条目），一次调用产出总览、逐篇要点、横向对比、趋势与脉络、空白与值得跟进，可复制全文并保留本机历史。
+- 输入只有题录与摘要，不读取 PDF、不上传全文；默认一次发送前 12 篇（可选 6／12／20／30，超过 12 篇需确认），摘要过长按篇数均分预算自动压缩，缺摘要的条目在结果中标注为仅依据题录。
+- 结果只用于阅读：不写入 Zotero 条目、笔记或标签。模型只按序号回指文献，标题与条目身份由本地回填；无法解析为结构化综述时保留原始返回文字，不猜测任何一篇的结论。
+- 模型沿用「文献解析」的功能配置，不新增计费目的地。BYOK 未确认的执行仍不自动重发：窗口提示先在提供商后台核对，用户显式授权后才沿用同一会话顶掉旧记录；已收到的部分综述照常保留。
+- 失败提示继续只投影错误码、HTTP 状态与错误类名，不回显上游正文或密钥；提示词把收藏夹名、标题、摘要与标签声明为不可信引用材料，忽略其中要求执行工具或改写任务的文字。
+- Collection quick review: a new collection context-menu window walks the collection and its sub-collections and produces an overview, per-paper notes, a comparison table, trends and gaps in a single request, with local history and full-text copy.
+- Only bibliographic metadata and abstracts are sent — never PDFs. Twelve papers go per request by default (6/12/20/30, above 12 asks for confirmation); the abstract budget is shared across papers and items without an abstract are marked as bibliography-only.
+- The digest is display-only and never writes items, notes or tags. The model references papers by index while titles and item identities are filled locally; an unparsable response is kept as raw text instead of inventing conclusions.
+- The review reuses the paper-analysis feature model, so no new billing destination exists. Unconfirmed BYOK executions are still never resent: the window asks you to check the provider first and only a user-authorized retry supersedes the recorded execution, while partial output is retained. Error notices keep projecting only code, HTTP status and class name, and the prompt treats collection names, titles, abstracts and tags as untrusted quoted material.
+
+## 0.6.13.1 — 2026-10-26
+
+- 对照翻译不再无限堆积缓存：发布新成稿后只保留当前与上一版快照，任务目录里更早的成稿和写入中断留下的临时稿会在下一次打开对照翻译时后台回收；版面解析缓存同样每次重解析后只保留当前与上一版。
+- 已删除文献的对照成果与版面缓存在连续两次确认（间隔一分钟以上）后自动清理，避免残留孤儿目录；文献库尚未就绪时一律不删。想保留已删除文献的成果，可将首选项 `extensions.jadenseInZotero.removeOrphanTranslatedPDF` 设为 `false`（默认开启清理）。
+- 对照译文 PDF 完成后可自动保存到上次导出过的目录（首选项 `extensions.jadenseInZotero.autoSaveTranslatedPDF`，默认开启）；手动导出与自动保存都以文献标题命名，附件占位名「PDF」不再当作标题，且不会覆盖原 PDF 或已有文件。
+- 失败提示新增错误类型前缀（如【上游服务错误 · 503】），只投影错误码、HTTP 状态与错误类名，不回显上游正文或密钥。
+- BYOK 计费围栏沿用 0.6.13 上游设计：已产生输出或结果未确认的请求不会自动重发，需用户显式授权；本版不再改动 BYOK 重试与执行状态判定，并补充了锁定该边界的回归测试。
+- Bilingual PDF translation no longer accumulates cache: only the current and previous revisions survive a publish, while older published PDFs and interrupted temporary files are reclaimed in the background the next time the bilingual reader opens; layout parsing keeps the same two generations.
+- Results and layout caches of attachments deleted from the library are reclaimed after two confirmations at least a minute apart, and nothing is deleted while the library is not ready. Set `extensions.jadenseInZotero.removeOrphanTranslatedPDF` to `false` to keep them.
+- Finished bilingual PDFs can auto-save to the last used export directory (`extensions.jadenseInZotero.autoSaveTranslatedPDF`, on by default). Manual export and auto-save are named after the parent literature item instead of the attachment placeholder "PDF", and never overwrite the original PDF or an existing file.
+- Failure notices gain a typed prefix (e.g. [Upstream service error · 503]) built only from error code, HTTP status and class name, so no provider body or credential can leak.
+- The BYOK billing fence keeps the 0.6.13 behaviour: output-producing or unconfirmed executions are never resent without an explicit user choice. This build changes no BYOK retry or execution-state rules and adds tests that pin that boundary.
+
 ## 0.6.13 — Unreleased / 尚未发布
 
 - 文献解析与 PDF 对照翻译保存任务进度；可恢复的暂时故障等待后继续，重启后恢复此前明确运行的任务，用户暂停的任务等待手动继续。已完成的模型结果只补本地保存、批注或 PDF 排版。

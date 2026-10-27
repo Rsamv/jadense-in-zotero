@@ -2,11 +2,75 @@
 
 [返回 README](../README.md) · [Zotero 入门](zotero-guide.md) · [FAQ](faq.md)
 
+- [0.6.13.5 快速解析：评价档位锚点与开源链接发现](#update-06135)
+- [0.6.13.4 快速解析：弹出列表框、默认 6 篇与输出预算](#update-06134)
+- [0.6.13.3 快速解析：思路／实验流程、开源标注与逐篇评价](#update-06133)
+- [0.6.13.2 收藏夹快速解析](#update-06132)
+- [0.6.13.1 磁盘回收、译文自动保存与错误类型](#update-06131)
 - [0.6.13 任务继续、解析状态与阅读字号（候选版）](#update-0613)
 - [0.6.0 对照翻译与引擎配置](#pdf-translation-060)
 - [0.6.2 更新提示与阅读入口](#release-062)
 - [0.6.10 引擎存储、BYOK 档位与升级](#update-0610)
 - [0.6.9 简阅、模型与翻译反馈](#simple-reading-069)
+
+<a id="update-06135"></a>
+
+## 0.6.13.5：评价更稳、开源链接找得更准（2026-10-27）
+
+- **为什么每次评价不一样**：同一批文献重复生成，评价会漂移。插件侧的提示词是确定生成的，全仓库没有任何 `temperature`／`top_p`／`seed` 设置，所以抖动来自模型服务端的采样。这一版不给请求加采样参数（BYOK 请求构造原样不动，加了也救不了判档口径不统一的问题），改的是判档标准。
+- **档位锚点**：`high`／`medium`／`low`／`unclear` 各写死判据——`high`＝该方向上此前少见的设定且给出可复现产物或新任务设定，`medium`＝已知做法的新组合／新场景／规模推进，`low`＝增量改动（换骨干、调超参、加一个模块）或结论仅限小样本自建数据，`unclear`＝材料不足，含缺摘要的条目。并明确要求「不要为了拉开差距而分档」。
+- **允许结合模型自身的知识**：实用价值与创新性可以引用模型对该方向已有工作、常见做法与后续影响的了解，不必只盯摘要文字。代价是必须交代来源：判断依据逐句以「摘要：」「链接：」「知识：」开头，凭记忆而材料未证实的部分要写「AI 推断，需核对」，未提供的数值不得用来支撑档位。
+- **开源证据不再只看摘要**：每篇发给模型的数据新增 `links` 字段，题录的 `url` 与 `extra` 里的网址会被抽进来；代码／数据集判「有」时可以引用摘要原话或这些链接，并在依据里标「摘要：」「题录链接：」「附件链接：」。图片地址、参考文献里成串的无关网址会被过滤，每篇最多 3 条、已知代码与数据站点优先，超出 160 字的网址截断。模型仍只能原样引用 `links` 里已有的地址，不得输出别的网址。
+- **扫描本机附件（新开关）**：项目主页通常印在 PDF 第一页页脚或文末的 "Code availability"，而库里常常只存了 PDF 本身。勾上「扫描附件找开源链接」（首选项 `extensions.jadenseInZotero.quickReviewScanLinks`，默认开启）后，生成前会用插件自带的 pdf.js 只读每篇附件的**第一页与最后三页**文字，从里面抽链接：单附件上限 20 MB、每篇最多 2 个附件、每批只扫一次（授权重发沿用已扫过的那批，不重读盘）。外发的只有抽到的链接文本，PDF 正文不发送，也不会打开任何链接。关掉开关即回到「只发题录与摘要、不读取 PDF」，窗口顶部的说明行会跟着开关改写，把这次到底发不发附件写明白。
+- **看得见结果**：文献清单里带链接的行标出条数；结果卡片与复制全文新增「本地链接」一行，用等宽文本展示、可整段选中，但不做成链接（不生成 `<a>`），避免误点外部地址；本机历史也保存这些链接，重新打开记录时卡片上仍然看得到。
+- **两处措辞与预算修正**：开源徽章从「摘要明确给出／摘要未提及」改为「明确给出／明确不给／未见说明」，因为证据现在不只来自摘要。`resourceNote` 上限 100→120（要放得下一条完整网址加来源前缀），逐篇评价的「依据」120→150；提示词里写给模型的字数限制仍与客户端的裁剪上限由同一组常量生成。
+- **围栏不变**：还是一次派发、沿用「文献解析」功能模型，不新增计费目的地；BYOK 未确认的执行依旧不自动重发，错误投影依旧只给错误码、HTTP 状态与类名。
+- **What changed**: ratings drift between runs because the provider samples — the plugin's prompt is deterministic and no `temperature`/`top_p`/`seed` exists anywhere in the code — so this build changes the *criteria*, not the request body. Each band now carries an explicit anchor, the model may use its own knowledge for value and novelty, and every sentence of the basis must be labelled abstract / link / knowledge, with unverified recall marked as an AI inference. Each paper additionally carries a `links` field harvested from the bibliographic `url` and `extra` fields and, with the new "Scan attachments for code links" switch on (`extensions.jadenseInZotero.quickReviewScanLinks`, on by default), from page 1 and the last three pages of each local PDF via the bundled pdf.js — 20 MB per file, 2 attachments per paper, once per batch. Only the extracted URL text is sent; the PDF body never leaves the machine and nothing is opened. Switching it off restores "metadata and abstracts only". Found links appear in the paper list, on each result card and in the copied text as selectable, deliberately non-clickable monospace text, and are stored in local history. One dispatch, one billing destination, the unconfirmed-BYOK resend fence and the redacted error projection are all unchanged.
+
+<a id="update-06134"></a>
+
+## 0.6.13.4：快速解析的三处收尾（2026-10-26）
+
+- **下拉框换成自绘列表框**：收藏夹与「一次发送」两处选择改用插件自带的列表框组件，弹出层是页面内的不透明元素，跟随主题，不会再出现透明叠字。0.6.13.3 里给 `<option>` 补背景的做法无效——Zotero 的 chrome 文档中，原生 `<select>` 的弹出层是文档内的 XUL 菜单，不吃页面样式，因此这次从机制上换掉，不是再加一层 CSS。展开状态按 Escape 只收起弹层，不会关掉窗口。
+- **默认发 6 篇**：「一次发送」的默认值从前 12 篇改为前 6 篇（可选 6／12／20／30），超过 12 篇仍需先确认。
+- **综述更快**：请求的耗时几乎全部落在生成输出上，因此这一版压缩每段输出的预算——每篇的「一句话」限 80 字、问题 120 字、思路／方法／实验流程／结论／局限等各按字段限定，工具与开源依据 100 字；总览 600 字，横向对比最多 5 个维度（维度名 40 字、说明 240 字），趋势与空白各 400 字；勾选评价时每篇的实用价值、创新性各 140 字、依据 120 字、总体评价 300 字。4 篇并勾选评价时，最坏情况的输出从约 22,680 字降到约 9,340 字。提示词同步要求每项写成一到两个短句，不铺陈。请求次数、计费目的地与 BYOK 未确认不重发的约束都没有变化，也没有给请求加最大输出长度上限——上限会截断 JSON 并让解析直接失败。
+- **「一句话」不再讲收藏夹**：这一栏原来叫「定位」，提示词写的是「说明该文献在收藏夹中的位置」，结果每篇都写成「该文位于收藏夹中关于……的研究位置」，对阅读综述没有信息量。现在改名为「一句话」，提示词明确要求只描述论文本身、不得提收藏夹或目录分类，发送给模型的每篇数据也去掉了分类路径字段。
+- **接收进度**：接收阶段原本没有阶段文案，状态行会整段不动，看起来像卡住。现在按字数增长补一条自节流的提示（约每 2 秒最多一条）：「正在接收综述 · 已收到 N 字」。
+- **Closing three gaps**: the collection and papers-per-request pickers are now the plugin's own list-box component, because in a Zotero chrome document the native `<select>` popup is an in-document XUL menu that ignores page CSS — so the 0.6.13.3 background tweak could not have worked and is replaced rather than repeated. The default batch drops from 12 papers to 6. Because the review is limited by output generation, every field gets an explicit character budget (worst case for 4 rated papers: about 22,680 characters down to about 9,340) and the prompt asks for one or two short sentences per item; no request-level output cap is added, since that would truncate the JSON and fail parsing. The per-paper "role" line is renamed "In brief" and rewritten to describe the paper itself, not where it sits in your collection — the folder path is no longer sent to the model at all. A self-throttled "Receiving the review · N characters so far" line keeps the status alive during the wait. Dispatch count, billing destination and the unconfirmed-BYOK resend fence are unchanged.
+
+<a id="update-06133"></a>
+
+## 0.6.13.3：快速解析读起来更省事（2026-10-26）
+
+- **窗口更大**：快速解析窗口按可用屏幕的 88% 打开，最小 1440×820；屏幕不够大时退回可用范围，不会超出屏幕。历史条目的「删除」键与标题、时间回到同一行。
+- **每篇讲清思路与实验流程**：逐篇要点新增「思路」「实验流程」「工具」，并按摘要写明的事实标注开源代码与数据集情况（摘要明确给出／摘要明确不给／摘要未提及——0.6.13.5 起证据不再只来自摘要，措辞改为「明确给出／明确不给／未见说明」），配一句判断依据；界面用颜色区分三种情况，复制的文本同样保留。模型不得按常识或期刊惯例推断，也不得编造仓库名、网址或许可证。
+- **逐篇评价**：勾选「逐篇评价（实用价值、创新性）」后，同一次调用会带回每篇的实用价值、创新性、判断依据与一段总体评价——不额外增加请求次数，也不新增计费目的地。评价与对应文献的要点排在同一行，向下浏览时一起滚动。勾选状态记在首选项 `extensions.jadenseInZotero.quickReviewEvaluate`，默认不勾选。评价与综述同样克制：证据不足时档位显示「证据不足」，缺摘要的条目只能给该档。
+- **历史点开还是卡片**：结构化正文随记录一起保存，重新打开历史记录能恢复逐篇卡片与评价栏；0.6.13.3 之前只存整段文字的记录仍按原文显示。
+- **Faster to read**: bigger window (88% of the screen, 1440×820 minimum), per-paper idea / experimental setup / tools, colour-coded code and dataset availability stated by the abstract, and an optional per-paper rating of practical value and novelty folded into the same single request so nothing is billed twice. Ratings stay on the same row as their paper, so both scroll together. Reopening a saved review restores the cards because the structured digest is stored with the record. (The papers-per-request popup stayed broken in this version and is fixed in 0.6.13.4.)
+
+<a id="update-06132"></a>
+
+## 0.6.13.2：收藏夹快速解析（2026-10-26）
+
+- **一次调用汇总一个子分类**：在 Zotero 收藏夹上右键 →「Jadense」→「快速解析此收藏夹…」。窗口递归读取该收藏夹及子收藏夹的文献（跳过附件、笔记与回收站条目），输出总览、逐篇要点、横向对比、趋势与空白，可复制全文并在本机保留历史。操作见[快速解析收藏夹](#quick-review)。
+- **只送题录与摘要**：不读取 PDF，不上传全文。默认一次发送前 12 篇（可选 6／12／20／30，0.6.13.4 起默认改为前 6 篇），超过 12 篇需先确认；摘要过长按篇数均分预算自动压缩，缺摘要的条目标注为仅依据题录。（0.6.13.5 起，题录里发现的开源链接与附件首尾页抽到的链接文本也会随每篇数据送出，PDF 正文仍不外发——见[评价更稳、开源链接找得更准](#update-06135)。）
+- **模型与计费**：沿用「文献解析」的功能模型（默认跟随对话模型），不新增计费目的地。BYOK 下未确认的执行仍不会自动重发，需先在提供商后台核对，再显式授权重发。
+- **只读产物**：结果与历史只用于阅读与复制，不写入 Zotero 条目、笔记或标签；标题与条目身份由本地按序号回填，模型无法伪造某篇文献的存在。无法结构化时保留原始返回文字，不补齐结论。
+- **Collection quick review**: right-click a collection → Jadense → "Quick review this collection…". One request summarises the collection and its sub-collections into an overview, per-paper notes, a comparison table, trends and gaps. Only metadata and abstracts leave the machine — never PDFs. The default batch is 12 papers (6/12/20/30, above 12 needs confirmation; the default drops to 6 in 0.6.13.4) with a shared abstract budget.
+- **Same model, same fence**: the review uses the paper-analysis feature model, so no new billing destination appears. Unconfirmed BYOK executions are still never resent; check the request with your provider first, then authorise a resend. Titles and item identities are filled in locally by index, so the model cannot invent a paper. Nothing is written into the library: the digest and its local history are display-only.
+
+<a id="update-06131"></a>
+
+## 0.6.13.1：磁盘回收、译文自动保存与错误类型（2026-10-26）
+
+- **磁盘回收**：对照翻译每次发布成稿都会写入新的 revision 快照，0.6.13.1 起插件回收无人引用的历史文件：发布新成稿后任务目录只保留当前与上一版；版面解析缓存在重解析后同样只保留两代；文献被删除后，其对照成果与版面缓存在连续两次确认（间隔一分钟以上）后清除。回收在打开文献工作区或对照翻译时于后台执行，因此升级后的第一次运行就会释放此前积压的空间。已导出的译文 PDF 与原始附件不受影响；重新翻译已删除的文献会再次产生请求与费用。如需保留已删除文献的成果，把首选项 `extensions.jadenseInZotero.removeOrphanTranslatedPDF` 设为 `false`。文献库尚未加载完成时不会删除任何文件。
+- **译文自动保存**：完成对照翻译后可把双语（对照）PDF 自动写入上一次手动导出记下的目录，首选项 `extensions.jadenseInZotero.autoSaveTranslatedPDF` 默认为开启；目录为空时不写入任何文件。手动导出与自动保存都以文献条目的文章标题命名（附件占位名「PDF」不再作为标题），文件名中的 `: * ? " < > | / \` 等字符会被替换，超过 120 字截断；目标目录已有同名文件时依次追加 ` (2)`、` (3)`，不覆盖已有文件，也不会覆盖原始 PDF。
+- **错误类型前缀**：翻译、解析与对话的失败提示在原有可操作文案前增加类型标记，如【上游服务错误 · 503】【网络错误 · TypeError】，标记只取错误码、HTTP 状态与错误类名，不包含上游响应正文与密钥。
+- **BYOK 计费围栏不变**：已产生输出或结果未确认的 BYOK 请求不会自动重发；本版本沿用 0.6.13 的执行状态判定（`partial`/`failed` 记为已确认失败，未确认保持拦截），并新增 4 项回归测试锁定该边界。
+- **Storage reclamation**: each published revision writes new snapshot files, so 0.6.13.1 removes what no index references — a task folder keeps the current and previous pair (including interrupted `.tmp.pdf` writes), the layout cache keeps two generations per re-parse, and results of an attachment deleted from the library are removed after two confirmations at least a minute apart. Reclamation runs in the background when the literature workspace or bilingual reader opens. Exported translations and original attachments are untouched; retranslating a deleted paper sends billable requests again. Set `extensions.jadenseInZotero.removeOrphanTranslatedPDF` to `false` to keep them. Nothing is deleted while the library is still loading.
+- **Translated PDF auto-save**: finished bilingual PDFs can be written to the directory remembered from the last manual export (`extensions.jadenseInZotero.autoSaveTranslatedPDF`, on by default); with no remembered directory nothing is written. Both paths name the file after the parent literature item, replace characters that Windows rejects, cap the name at 120 characters and append ` (2)`, ` (3)`… instead of overwriting an existing file or the original PDF.
+- **Typed failure notices**: messages keep their actionable text and gain a prefix such as [Upstream service error · 503], built only from error code, HTTP status and class name, so no provider body or credential can appear.
+- **BYOK billing fence unchanged**: executions that produced output or whose result is unconfirmed are still never resent. This version keeps the 0.6.13 execution-state model (`partial`/`failed` are recorded as confirmed failures, unconfirmed stays fenced) and adds four regression tests pinning that boundary.
 
 <a id="update-0613"></a>
 
@@ -96,6 +160,7 @@ Reading/PDF translation better preserves partial results and reports stopped or 
   - [3.5 参考文献核验与导入](#references)
   - [3.6 图片解读](#figures)
   - [3.7 查看历史与恢复任务](#history)
+  - [3.8 快速解析收藏夹](#quick-review)
 - [4. 个性化与文献上传](#preferences)
   - [4.1 语言、主题与快捷键](#appearance)
   - [4.2 上传到攻玉](#upload)
@@ -312,6 +377,29 @@ BYOK 是 Bring Your Own Key：使用自己在模型服务商处申请的 API 密
 
 全文翻译隐藏侧栏后继续运行；中断后从「翻译历史」手动继续。解析历史在「文献解析」中查看。打开历史不会自动重新请求 AI。遇到待确认的攻玉请求，先使用「恢复结果」读取已有结果。
 
+<a id="quick-review"></a>
+
+### 3.8 快速解析收藏夹
+
+在 Zotero 左侧收藏夹上右键 →「Jadense」→「快速解析此收藏夹…」，独立窗口会递归读取该收藏夹及其子收藏夹里的文献条目（附件、笔记与回收站条目不参与），一次调用产出：总览、逐篇要点（一句话／问题／思路／方法／实验流程／结论／局限／工具，并标注开源代码与数据集情况）、横向对比、趋势与脉络、空白与值得跟进。窗口默认按可用屏幕的 88% 打开（最小 1440×820），屏幕不够大时退回可用范围。收藏夹与篇数两处选择用的是插件自绘的列表框，弹出层不透明、跟随主题。
+
+1. 顶部列表框可切换到同资料库的其他收藏夹；列表默认全部勾选，可逐篇取消。
+2. 「一次发送」默认前 6 篇，可选 6／12／20／30 篇。超过 12 篇时先确认再发送：篇数越多，每篇摘要预算越紧，耗时与费用也越高。
+3. 发送内容是题录、摘要与每篇的 `links`（本机发现的开源链接）；摘要过长按篇数均分预算自动压缩，缺摘要的条目仅依据题录判断并在结果中标注。PDF 正文、全文与附件路径都不发送。
+4. 「扫描附件找开源链接」开关（首选项 `extensions.jadenseInZotero.quickReviewScanLinks`，默认开启）决定 `links` 的来源范围：开着时，生成前会用插件自带的 pdf.js 只读每篇附件的**第一页与最后三页**文字，从里面抽网址——项目主页常印在首页页脚或文末的 "Code availability"，很多人只存了 PDF 本身，靠摘要找不到。单附件上限 20 MB、每篇最多 2 个附件、每批只扫一次；外发的只有抽到的链接文本，正文不出机器，也不会打开任何链接。关掉后回到只读题录的 `url`／`extra`，窗口顶部的说明行会写明这次到底读不读附件。
+5. 「一次发送」默认前 6 篇，可选 6／12／20／30 篇。超过 12 篇时先确认再发送：篇数越多，每篇摘要预算越紧，耗时与费用也越高。
+6. 「逐篇评价（实用价值、创新性）」勾选后，**同一次调用**会带回每篇的实用价值、创新性、判断依据以及一段总体评价，不增加请求次数，也不新增计费目的地。评价与对应文献的要点排在同一行，向下浏览时一起滚动。勾选状态记在首选项 `extensions.jadenseInZotero.quickReviewEvaluate`（默认不勾选）。档位按固定锚点判：`高`＝该方向少见的设定且有可复现产物，`中`＝已知做法的新组合或规模推进，`低`＝增量改动或小样本自建数据，`证据不足`＝材料不够，含缺摘要的条目。
+7. 评价允许结合模型自己的知识，但依据必须逐句标来源：「摘要：」「链接：」「知识：」，凭记忆而材料未证实的部分要写「AI 推断，需核对」，未提供的数值不得用来支撑档位。开源代码与数据集只有三种说法：「明确给出」「明确不给」「未见说明」，界面按颜色区分并在文本里保留依据句；判「明确给出」要能指出摘要原话或一条具体链接（标「题录链接：」或「附件链接：」），插件不让模型按常识、期刊或「这类论文通常会开源」推断，也不允许编造或改写仓库名与网址。
+8. 「一句话」只讲论文本身，不讲它在你收藏夹里的位置——发送给模型的每篇数据里不带分类路径。每个字段都有明确的字数上限（详见[输出预算](#update-06134)），提示词要求一到两个短句写完；超出的部分客户端直接截断，不补齐。等待期间状态行会显示「正在接收综述 · 已收到 N 字」，扫描附件时先显示「正在扫描附件里的开源链接 · i/N」。
+9. 发现的链接在清单里标出条数，在结果卡片与复制全文里作为「本地链接」一行以等宽文本展示——可整段选中，但刻意不做成可点击的链接，插件不代你打开外部地址；本机历史也保存这些链接。
+10. 结果只用于阅读：可「复制全文」，不会写入 Zotero 条目、笔记或标签。历史保存在本机，可逐条删除或清空；重新打开历史会恢复逐篇卡片与评价栏（0.6.13.3 之前只存整段文字的记录仍按原文显示）。
+
+模型沿用「文献解析」的功能配置（默认跟随对话模型）；使用 BYOK 时，一次解析是一次真实计费请求。若上次执行结果未确认，插件不会自动重发，需要先在提供商后台核对该请求，再显式授权重发；授权重发沿用这次已锁定的评价勾选。无法解析为结构化结果时保留原始返回文字，不猜测任何一篇的结论。
+
+### Quick review a collection
+
+Right-click a collection → Jadense → "Quick review this collection…". The window walks the collection and its sub-collections, skips attachments, notes and trashed items, and produces an overview, per-paper notes (in brief, question, idea, method, experimental setup, finding, limitation, tools, plus code and dataset availability), a comparison table, trends and gaps in one request. It opens at 88% of the available screen with a 1440×820 minimum, and both pickers are the plugin's own themed list boxes rather than native popups. What leaves the machine is bibliographic metadata, abstracts and a per-paper `links` list; the abstract budget is shared across papers, items without an abstract are judged from the bibliography alone, and no PDF text, full text or attachment path is ever sent. With "Scan attachments for code links" on (`extensions.jadenseInZotero.quickReviewScanLinks`, on by default) the bundled pdf.js reads only page 1 and the last three pages of each attachment to harvest URLs — project pages usually sit in the first-page footer or the closing "Code availability" — capped at 20 MB per file and 2 attachments per paper, once per batch; only the link text is sent and nothing is opened. Turning the switch off limits discovery to the bibliographic `url` and `extra` fields, and the header line states which behaviour is active. The default is the first 6 papers (6/12/20/30 selectable) and anything above 12 needs confirmation. Every output field has an explicit character budget and the prompt asks for one or two short sentences, because the wait is dominated by generation; no request-level output cap is added, since that would truncate the JSON. Ticking "Rate each paper (practical value, novelty)" adds per-paper ratings and an overall assessment to the same request, so nothing is billed twice, and each rating stays on its paper's row so both scroll together. Bands follow fixed anchors instead of the model's mood: a rating may use the model's own knowledge of the field, but every sentence of the basis must be labelled 「摘要：」/「链接：」/「知识：」 and unverified recall has to be marked as an AI inference to check. Code and dataset badges say only "stated", "stated as unavailable" or "not stated", and "stated" requires either an abstract sentence or a concrete link quoted back from `links` — no inference from journal or "usually open-sourced" conventions, and no invented or rewritten repository names or URLs. Discovered links are counted in the paper list and shown on each card and in the copied text as selectable monospace text that is deliberately not a hyperlink. The digest is display-only and stored locally, including its links; reopening a record restores the cards, and an unconfirmed BYOK execution is never resent without explicit authorization.
+
 <a id="preferences"></a>
 
 ## 4. 调整偏好与上传文献
@@ -486,7 +574,6 @@ Official full packages show **Frontier Radar** in the workspace sidebar; indepen
 Open **Frontier Radar → Research interests**, add phrases with Enter, and choose a source when Jadense mode is enabled. The defaults are the last three days and 30 deduplicated candidates. Standard mode needs a saved TypeSafe key under **Settings → Feature settings → Literature classification**; Jadense mode needs a connected account and permissions. Set a separate text model under **Feature settings → Frontier Radar** for Chinese keyword translation and optional AI reviews. Reviews are off by default, but Jev screening may still incur charges. Scores express relevance, not paper quality; reviews use titles and abstracts only.
 
 Start a manual run or schedule daily tracking (09:00 local time by default) while Zotero is running and the selected mode is configured. History keeps earlier results. Save a paper to a library or collection, optionally requesting its PDF; a failed PDF download leaves the saved item intact. Demo papers enter your library only after an explicit save action.
-
 
 <a id="update-0610"></a>
 ## 0.6.10 引擎存储、BYOK 档位与升级 / Engine storage, BYOK levels and upgrade

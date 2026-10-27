@@ -12,6 +12,12 @@
 
 [简体中文](README.md) · **English**
 
+> **This is a personal fork, not an official release channel.** The upstream project is [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero); this branch starts from official `v0.6.13` and adds changes for personal use: a collection quick-review window (per-paper ratings with fixed level anchors, plus open-source link discovery in local attachments) and bilingual-translation cache reclamation.
+>
+> The license is unchanged — [Jadense Non-Commercial License 1.0](LICENSE): personal non-commercial use only, distributed free of charge, original copyright notices retained, modifications identified in the `0.6.13.x` entries at the top of [CHANGELOG.md](CHANGELOG.md), and the same non-commercial conditions passed on downstream.
+>
+> Local versions use four segments (`0.6.13.1` → `0.6.13.5`), newer than the current official build but older than a future official `0.6.14`. The add-on ID and the packaged `update_url` keep the official values, so an official release newer than the local one replaces this fork's build through auto-update — intended for personal use, but anyone staying on the fork should disable automatic updates.
+
 **Understand papers in Zotero, and turn what you read into the next step of your research.**
 
 [Paper Q&A](docs/usage-guide.md#paper-chat) · [Source-linked annotations](docs/usage-guide.md#paper-analysis) · [Selection translation](docs/usage-guide.md#selection-translation) · [Full translation and local OCR](docs/usage-guide.md#full-translation) · [Figure interpretation](docs/usage-guide.md#figures) · [Reference verification and import](docs/usage-guide.md#references)

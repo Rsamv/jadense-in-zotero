@@ -1,6 +1,6 @@
 {
   "name": "jadense-in-zotero",
-  "version": "0.6.13",
+  "version": "0.6.13.5",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "packageManager": "pnpm@10.19.0",
@@ -38,5 +38,9 @@
     "katex": "0.16.47",
     "markdown-it": "15.0.1",
     "pdfjs-dist": "4.10.38"
+  },
+  "allowScripts": {
+    "esbuild@0.27.7": true,
+    "esbuild@0.21.5": true
   }
 }
