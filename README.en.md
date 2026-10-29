@@ -1,22 +1,23 @@
 <p align="center">
-  <a href="https://jadense.cn/"><img src="content/icons/logo-padded.png" width="128" height="128" alt="Jadense Logo"></a>
+  <img src="content/icons/logo-padded.png" width="128" height="128" alt="Jadense Logo">
 </p>
-<h1 align="center">Jadense in Zotero</h1>
-<p align="center">Jadense · AI reading assistant for Zotero</p>
+<h1 align="center">Jadense in Zotero (personal fork)</h1>
+<p align="center">A private build of the Jadense Zotero reading plugin, based on official v0.6.13</p>
 <p align="center">
   <a href="https://www.zotero.org/download/"><img src="https://img.shields.io/badge/Zotero-8%20%7C%209%20%7C%2010-bb2222" alt="Zotero 8 / 9 / 10"></a>
-  <a href="https://github.com/jadense-ai/jadense-in-zotero/releases/latest"><img src="https://img.shields.io/github/v/release/jadense-ai/jadense-in-zotero" alt="GitHub release"></a>
+  <a href="https://github.com/Rsamv/jadense-in-zotero/releases/latest"><img src="https://img.shields.io/github/v/release/Rsamv/jadense-in-zotero" alt="fork release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Non--Commercial-16a36a" alt="Non-commercial license"></a>
-  <a href="docs/usage-guide.md"><img src="https://img.shields.io/badge/BYOK-supported-16a36a" alt="BYOK supported"></a>
 </p>
 
 [简体中文](README.md) · **English**
 
-> **This is a personal fork, not an official release channel.** The upstream project is [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero); this branch starts from official `v0.6.13` and adds changes for personal use: a collection quick-review window (per-paper ratings with fixed level anchors, plus open-source link discovery in local attachments) and bilingual-translation cache reclamation.
+> **This is a personal fork, not an official release channel.** The upstream project is [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero); this branch starts from official `v0.6.13` and adds changes for personal use: a collection quick-review window (0–100 per-paper ratings, local PDF link/appendix/layout forensics, bounded per-paper deep read) and bilingual-translation cache reclamation.
+>
+> The upstream README's third-party API reseller promotion, donation pages, star-history chart and web-app upsell sections have been removed here. Nothing was put in their place — no analytics, no redirect endpoints. Official feature documentation still lives upstream and in [docs/usage-guide.md](docs/usage-guide.md).
 >
 > The license is unchanged — [Jadense Non-Commercial License 1.0](LICENSE): personal non-commercial use only, distributed free of charge, original copyright notices retained, modifications identified in the `0.6.13.x` entries at the top of [CHANGELOG.md](CHANGELOG.md), and the same non-commercial conditions passed on downstream.
 >
-> Local versions use four segments (`0.6.13.1` → `0.6.13.5`), newer than the current official build but older than a future official `0.6.14`. The add-on ID and the packaged `update_url` keep the official values, so an official release newer than the local one replaces this fork's build through auto-update — intended for personal use, but anyone staying on the fork should disable automatic updates.
+> Local versions use four segments (`0.6.13.1` → `0.6.13.13`), newer than the current official build but older than a future official `0.6.14`. The add-on ID and the packaged `update_url` keep the official values, so an official release newer than the local one replaces this fork's build through auto-update — intended for personal use, but anyone staying on the fork should disable automatic updates.
 
 **Understand papers in Zotero, and turn what you read into the next step of your research.**
 
@@ -26,79 +27,69 @@ Jadense in Zotero is a source-available AI reading assistant from [Jadense (攻�
 
 **Free for personal non-commercial use · Commercial use prohibited · Bring your own API key (BYOK) · Jadense account optional**
 
-**[Download the plugin](https://github.com/jadense-ai/jadense-in-zotero/releases/latest)** · [Requirements and installation methods](#requirements) · [Quick start](#quick-start) · [Explore Jadense](#continue-research)
+**[Download this fork's build](https://github.com/Rsamv/jadense-in-zotero/releases/latest)** · [Requirements and installation methods](#requirements) · [What this branch changes](#fork-differences) · [Quick start](#quick-start) · [Changelog](CHANGELOG.md)
 
 The client is source-available under the [non-commercial license](LICENSE). Model usage is billed according to your chosen provider or your Jadense account's subscription and points rules.
 
-**v0.6.13 candidate, not yet released:** Paper analysis and bilingual PDF translation retain progress for continuation. Sampling notices no longer mark completed analysis as failed. Selection translation, Reading mode and translated PDFs gain separate text-size or zoom controls, with a clearer restart action for blocked PDF tasks. [Setup, upgrade and known limitations](docs/usage-guide.md#update-0613).
+**This fork is at package version 0.6.13.13** (release `v0.23`), built on official `v0.6.13`. Rounds `0.6.13.1` through `0.6.13.13` are listed one by one at the top of [CHANGELOG.md](CHANGELOG.md); the sections below summarise what they add.
 
-**v0.6.12 is released:** Discover frontiers separates home, progress and results, refreshes paper cards and saving actions, and adds all-keyword / any-keyword search modes with help. The official full package includes Discover frontiers; public-source builds are base distributions. [Setup and upgrade notes](docs/usage-guide.md#update-0612) · [Download the official package](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12).
-
-**What does Jadense mode do?** Enable it from the workspace top bar to use your Jadense account for Jev classification without a separate TypeSafe key, choose Jadense OCR when local OCR is unavailable, and search across 13 sources in Frontier Radar. It is off by default and requires a connected account with the relevant permissions; model calls may use points. Standard features remain available with your own keys while the mode is off. [Setup steps](docs/usage-guide.md#jadense-mode)
-
-The offline suite includes the new [PDF installation guide](<docs/jadense-in-zotero 离线安装详细流程.pdf>) (Chinese).
+The baseline itself was verified by upstream on Windows 11 / Zotero 10.0.6. This fork has been run on the same pair with 35 real PDFs in a personal library; macOS, Linux, Zotero 8/9 and live paid providers were not tested.
 
 <!-- release-summary:start -->
-## Recent releases
+## Upstream release baseline
 
-- [v0.6.12](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12) — Separate discovery home, progress and results; refresh paper cards and saving, and add all-keyword / any-keyword search with help.
-- [v0.6.11](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.11) — Refresh Discover frontiers welcome, scanning and history; fix centered text and improve PDF upload recovery and translation feedback.
-- [v0.6.10](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.10) — Set separate PDF and OCR engine locations, choose BYOK thinking levels per feature, and set Jadense chat to `qwen-3.8-flash` once.
-- [v0.6.9](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.9) — Add Reading mode with on-demand translation; improve model thinking controls, translation progress and the bilingual PDF toolbar.
-- [v0.6.8](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.8) — Frontier Radar adds standard arXiv and 13-source Jadense tracking, structured AI reviews and separate model settings; Jadense mode also supports Jev classification and OCR.
+This fork's code baseline is official v0.6.13 (not yet released upstream). The published official releases it descends from:
 
-[Full version history](CHANGELOG.md)
+- [v0.6.12](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12) — Separate discovery home, progress and results; refresh paper cards and saving, add all-keyword / any-keyword search.
+- [v0.6.11](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.11) — Refresh discovery welcome, scanning and history; fix centered text, improve PDF upload recovery.
+- [v0.6.10](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.10) — Separate PDF and OCR engine locations, per-feature BYOK thinking levels.
+- [v0.6.9](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.9) — Add Reading mode with on-demand translation; improve translation progress and the bilingual PDF toolbar.
 <!-- release-summary:end -->
 
-The 0.6.12 draft originals were tested on Windows 11 / Zotero 10.0.6; see the [release verification notes](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12). Other operating systems, Zotero 8/9 and real paid services were not tested.
+<a id="fork-differences"></a>
 
-<a id="api-recommendation"></a>
+## What this branch changes, compared with official v0.6.13
 
-## API recommendation: Toodoo AI — capable models, affordable access
+### 1. Collection quick review (not present in official builds)
 
-**Read papers, translate passages, and explore ideas without stretching your budget.** [Toodoo AI](https://toodooai.com/) brings GPT and advanced Chinese models such as Zhipu GLM and Xiaomi MiMo together, so you can choose an AI assistant for your Zotero workflow.
+A separate window opened from a Zotero collection's context menu walks that collection and its sub-collections (skipping attachments, notes and trash) and produces a structured digest in **one** model request: overview, per-paper digests, a comparison table, trends and gaps.
 
-The platform positions its service around **low prices, genuine models, and reliable access**; see its listings for model and channel details. Price comparisons, per-request usage records, and setup support help you choose a model and understand your spending. Start with an affordable model for everyday translation and summaries, then try a more capable option when the task calls for it.
+| Area | Behaviour in this fork |
+| --- | --- |
+| What is sent | Bibliographic metadata, abstracts, extracted link text, top-level appendix titles and layout counts. **PDF body text is not sent**; the per-paper deep read is the only entry point that sends body fragments, and it needs explicit confirmation. |
+| Per-paper rating | 0–100 on five axes of 20 points each: problem value, methodological novelty, strength of evidence, reproducibility, application potential. Writing, layout, figures, venue and citations are not scored. Bands derive from the score (80+ high, 65–79 medium, 50–64 low), one ruler per batch; metadata-only or truncated-abstract input caps at 45. |
+| "Code released" has a hard definition | Only a repository URL (github / gitlab / huggingface / zenodo, with or without a scheme) or an explicit "source code released / open-sourced / available" statement counts as `yes`. Project pages, dataset sites, paper landing pages and promises such as "will be released after acceptance" do not. An unsupported `yes` is downgraded to "not stated" on the client. |
+| Attachment forensics | Whole-PDF reading (head and tail halves above 80 pages, 60 MB per file). The text layer is merged with **PDF hyperlink annotations** through `getAnnotations()`: in a 36-PDF local corpus, 572 of 610 link annotations have no counterpart in extracted text. arXiv / DOI / OpenReview landing pages, search sites, line-break fragments and repositories cited inside the reference list are excluded. |
+| Appendix detection | Top-level titles only — sub-sections (`D.1`), axis ticks and prose sentences are excluded. Numeral continuations such as `VII` are accepted, headings split across bare numbers and small-caps fragments are stitched back, hyphen-broken titles are rejoined. A paper that only marks an appendix gets "appendix present (sections unnumbered)"; the model may say it has an appendix but must not guess how many sections or their titles. |
+| Layout statistics | Locally counted top-level section titles (max 12), figures, tables, references and ablation / baseline / human-evaluation keyword hits. Only titles and counts leave the machine, and the prompt labels the line as measured locally rather than judged by the model. |
+| Section-to-page jumps | Every body section records its page and attachment, so its title on the card is a button calling `Zotero.Reader.open(attachmentID, { pageIndex })`. The jump data stays local: never in the request payload or the copied text, but persisted in history so an old review still jumps. |
+| Deep read on demand | After the batch review, each card offers "Deep read this paper (a separate request)". The plugin first cuts a bounded excerpt locally (max 3 sections, 400 characters each, 1200 total — introduction tail, method / conclusion / experiment heads), then a dialog states exactly how many characters will be sent, which sections, head or tail, on which page, and how many pages were read locally to cut it. Only then is that one dispatch made. |
+| Cards | A collapsible "Local evidence" panel (attachment tally, layout counts, body sections, local links, appendix titles) sits visually apart from the model's rating below, so "measured locally" and "judged by the model" cannot be confused. Local links open through `Zotero.launchURL` and only accept http/https, so a `javascript:` leftover from an old record cannot become an action. |
+| Tolerance | Malformed JSON (Chinese punctuation, unescaped quotes) no longer costs the whole review: parse as-is → syntax repair → field-by-field recovery, with an honest note about how many fragments were skipped. Empty shells do not count as covered papers. |
+| Failures are not silent | Each paper carries a `scanOutcome` (`parsed` / `noAttachment` / `oversize` / `unreadable` / `unavailable`). In Zotero 10 `Items.get` is cache-only and `getAttachments()` throws `UnloadedDataException` for unloaded items; the old code swallowed both and reported "read 0 pages · no links". Resolution now goes through `getAsync`, retries after `loadDataType('childItems')`, and an unreadable list says "attachment unavailable (retried next run)". |
+| Output is read-only | Nothing is written into Zotero items, notes or tags. Reviews stay in local history, can be copied in full and deleted. |
 
-### What is an API? No coding required
+### 2. Bilingual PDF translation cache
 
-Think of an **API** as a connection between Zotero and an AI service. When you ask a question or translate text, the plugin sends the content through that connection and displays the answer in your reading interface. An **API key** is your personal access pass: it identifies your account and lets the service charge your usage. Enter the service address, key, and model in the plugin—no programming needed.
+- Publishing a new revision keeps only the current and previous snapshot; older published outputs and interrupted temporary files are reclaimed in the background the next time the bilingual reader opens. Layout parsing keeps the same two generations.
+- Results and layout caches of attachments deleted from the library are reclaimed after two confirmations at least a minute apart, and nothing is deleted while the library is not ready. Set `extensions.jadenseInZotero.removeOrphanTranslatedPDF` to `false` to keep them.
+- Finished translated PDFs can auto-save to the last used export directory (`extensions.jadenseInZotero.autoSaveTranslatedPDF`, on by default), named after the parent item, never overwriting the original PDF or an existing file.
 
-- **Less copying and pasting:** use supported translation and Q&A features while reading.
-- **Pay for what you use:** text models typically charge for input and output tokens, which are small pieces of text, not necessarily whole words or characters. Paper text, conversation history, and generated answers can all count toward usage.
-- **Choose by task and budget:** compare models without buying a separate monthly chat subscription for each one.
-- **Keep spending visible:** review individual request costs and set key budgets.
+### 3. Error messages
 
-### Current model offers
+Failure notices gain a typed prefix (e.g. [Upstream service error · 503]) built **only** from error code, HTTP status and error class name — no provider body, no credential.
 
-**GPT from 98% off the platform base rate, plus 90% off MiMo through its promotional group.** The following snapshot was checked against effective platform prices and group multipliers on **2026-09-23**.
+### 4. Deliberately unchanged
 
-| Model and API group | Current offer | Tasks to try |
-| --- | --- | --- |
-| GPT-6 Sol · GPT PLUS | **Pay 2% of the platform model base rate** (98% off) | English papers, complex questions, writing revision |
-| GPT-6 Sol · GPT PRO | **Pay 5.5% of the platform model base rate** (94.5% off) | GPT access through an eligible account group |
-| MiMo-V2.6-Flash / Pro, MiMo-V2.5 / Pro · 福利模型（不定期） | **Pay 10% of the platform model base rate** (90% off) | Everyday Q&A, reasoning, organizing paper content |
-| GLM-5.2 · 国产模型 | **30% off** the official reference price listed by the platform | Chinese Q&A, summaries, translation |
-| GLM-5.1 / GLM-5.3 · 国产模型 | **20% off** the listed official reference price | Choose by paper difficulty and output quality |
-| Qwen3.8-Flash · 国产模型 | **10% off** the listed official reference price | Everyday translation and text organization |
-| Kimi-K2.6 · 国产模型 | **20% off** the listed official reference price | Long-form reading and summaries |
-| DeepSeek-V4-Flash · 国产模型 | **20% off** the listed official reference price for the same time period, with lower night rates | Reasoning and paper analysis |
+- **BYOK non-idempotence fence**: a request that already produced output, or whose result is unconfirmed, is never resent automatically. Only after you check with the provider and explicitly authorise it does one resend happen on the same session id. The deep read follows the same contract. This branch changes none of the upstream retry or execution-state rules, and regression tests pin the boundary.
+- **Billing destination**: quick review and deep read reuse the "paper analysis" feature model; no new billing entry point exists, and one batch review is one dispatch.
+- **Direct model requests**: BYOK requests go straight to the provider you configured. This fork removed the third-party API promotion from the README and added no telemetry or redirect endpoint of its own.
+- **Plugin ID and update feed** stay official, which is why an official release can overwrite these builds.
 
-For example, GPT-6 Sol in GPT PLUS, with input length up to 272,000 tokens, costs approximately **CNY 0.28 per million input tokens** and **CNY 1.40 per million output tokens**. MiMo-V2.6-Flash in the promotional group costs **CNY 0.10 input / CNY 0.20 output per million tokens**. “Per million” is a unit price, not a minimum purchase. Input is what you send; output is the model's reply, billed separately.
+### 5. Release numbering
 
-- **Match the model and group:** the GLM, Qwen, Kimi, and DeepSeek offers above apply to the `bailian/` model aliases. GPT PLUS and GPT PRO are **API group names**, not ChatGPT Plus or Pro memberships.
-- **Check eligibility:** available groups and cumulative top-up requirements depend on your account; check after signing in. The MiMo group is an intermittent promotion. GPT and MiMo discounts are relative to platform base rates, not an independently verified comparison with every original vendor price.
-- **Check length and time tiers:** GPT has a separate long-context tier. The listed DeepSeek model's input/output rates from 22:00 to 08:00 the next day, Beijing time, are half its daytime rates. Cache and other charges follow model details; the table does not additionally apply top-up bonuses.
+Package versions are four-segment (`0.6.13.13`); this repository's release numbers map one-to-one as `v0.(10 + x)`, so `v0.16` was `0.6.13.6` and `v0.23` is `0.6.13.13`. Only the newest release is kept, together with its tag.
 
-**[Compare current prices →](https://toodooai.com/price-comparison)** · **[Browse all models →](https://toodooai.com/pricing)**. Live prices, availability, and promotion terms take precedence over this dated snapshot.
-
-### Prefer ChatGPT itself? Subscription purchasing assistance is also available
-
-Toodoo AI also offers **GPT membership subscription purchasing assistance** for users who prefer chatting in the ChatGPT website or app. Ask the platform about plans, prices, delivery, and support.
-
-Choose **API access** to connect models to Zotero; choose **membership subscription assistance** for ChatGPT's own website or app. These are billed separately: buying a membership does not automatically add API credit for the plugin.
-
-**[Visit Toodoo AI and choose your assistant →](https://toodooai.com/)**. Try a short, familiar paper passage first, then choose your model and budget. See the [setup documentation](https://toodooai.com/docs) or contact the website's QQ group **658248617** for help. API use sends selected content to the service for processing; keep your key private and out of public screenshots or group chats.
 
 <a id="requirements"></a>
 
@@ -115,12 +106,12 @@ Choose **API access** to connect models to Zotero; choose **membership subscript
 
 | Method | How | Notes |
 | --- | --- | --- |
-| [Official plugin page](https://jadense.cn/plugin/zotero) | Get the `.xpi` from the page's download entry, then follow [Zotero's plugin installation instructions](https://www.zotero.org/support/plugins) | Use the version, compatibility range, and availability shown on the official page |
-| [GitHub Release](https://github.com/jadense-ai/jadense-in-zotero/releases/latest) | Download the current official XPI, then open it from Zotero **Tools → Plugins → gear → Install Plugin From File…** | The latest official release is [v0.6.12](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12), with metadata and SHA-256 checksums |
-| Zotero automatic update | In Zotero, open **Tools → Plugins → gear → Check for Updates** | Uses the [official Jadense update manifest](https://jadense.cn/plugins/zotero/jadense-in-zotero/updates.json); this channel is maintained separately from GitHub Releases, so use a manual method if the new version is not listed |
-| Build from source | Follow the [contributor guide](CONTRIBUTING.md#开发与本机验证) with Node 24 and pnpm 10.19.0, then install `release/zotero/v0.6.13/jadense-in-zotero-v0.6.13.xpi` | The current source builds the unreleased 0.6.13 base distribution; Frontier Radar is available in official full packages |
+| [This fork's Releases](https://github.com/Rsamv/jadense-in-zotero/releases/latest) | Download the `.xpi`, then open it from Zotero **Tools → Plugins → gear → Install Plugin From File…** | Each release carries a `SHA256SUMS` file. The current build is `0.6.13.13` (release `v0.23`). Do not use the **Source code** archive as an installer |
+| Official channel | Install from [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero/releases/latest) or the [official plugin page](https://jadense.cn/plugin/zotero) | Different code, same add-on ID `jadense-in-zotero@jadense.cn`; whichever you install last is the one Zotero keeps |
+| Zotero automatic update | In Zotero, open **Tools → Plugins → gear → Check for Updates** | The packaged `update_url` still points at the [official Jadense manifest](https://jadense.cn/plugins/zotero/jadense-in-zotero/updates.json), so an official release newer than this fork overwrites these builds. Disable automatic updates to stay on the fork |
+| Build from source | Follow the [contributor guide](CONTRIBUTING.md#开发与本机验证) with Node 24 and pnpm 10.19.0 | This branch's source builds `0.6.13.13`; the upstream release script rejects four-segment versions, so tags and artifacts are produced manually here |
 
-All methods ultimately install the Zotero `.xpi` plugin. Do not treat GitHub's **Source code** archive as an install package, and do not enable the legacy `.com` plugin identity alongside the current one. See [upgrade instructions](#upgrade) for migration details.
+Do not enable the legacy `jadense-in-zotero@jadense.com` identity alongside the current one. See [upgrade instructions](#upgrade) for migration details.
 
 
 <a id="ocr-installation"></a>
@@ -153,7 +144,7 @@ The **[detailed OCR installation guide (Chinese)](docs/local-ocr.md)** covers [s
 
 ## Contents
 
-- [API recommendation: Toodoo AI](#api-recommendation)
+- [What this branch changes, compared with official v0.6.13](#fork-differences)
 - [Start here: requirements, installation methods, and feature links](#requirements)
 - [OCR dependency installation](#ocr-installation)
 - [PDF layout engine setup](#pdf-engine-installation)
@@ -167,9 +158,8 @@ The **[detailed OCR installation guide (Chinese)](docs/local-ocr.md)** covers [s
 - [Reading features](#read-and-analyze-papers)
 - [Zotero introduction (中文)](docs/zotero-guide.md) · [Illustrated guide (中文)](docs/usage-guide.md)
 - [FAQ](#faq) · [Upgrade](#upgrade) · [Changelog](CHANGELOG.md)
-- [Continue your research](#continue-research)
-  - [Meet Jadense](#jadense-introduction) · [Bring papers into a project](#research-project)
-- [Support us](#support) · [WeChat / Alipay support page](support/README.md)
+- [What this fork adds](#fork-differences) · [License](#license)
+- [About the upstream project](#about-upstream)
 - [Contribute and share feedback](#contribute-and-share-feedback) · [Release workflow (中文)](CONTRIBUTING.md#发布正式版本)
 - [License](#license)
 
@@ -187,7 +177,7 @@ The workbench supports both English and Simplified Chinese. The steps below also
 
 ### 1. Install and open the workbench
 
-1. Download the `.xpi` plugin file from the [latest release](https://github.com/jadense-ai/jadense-in-zotero/releases/latest). The published release is **0.6.12**. If you have an older version installed, read the [upgrade instructions](#upgrade) first.
+1. Download the `.xpi` from [this fork's latest release](https://github.com/Rsamv/jadense-in-zotero/releases/latest) — currently **0.6.13.13** — and check it against the release's `SHA256SUMS`. If you have an older version installed, read the [upgrade instructions](#upgrade) first.
 2. In Zotero's plugin manager, choose the option to install a plugin from a file and select the XPI.
 3. Open the workbench from Zotero's Jadense entry and choose how to connect to a model service.
 
@@ -292,42 +282,17 @@ Click an automatically detected image, or press `Ctrl+Alt+S` (`⌘+Alt+S` on mac
 
 Figure interpretation requires a model that accepts images. Automatic detection requires a compatible PDF reader in Zotero 10.0.1 or later. When an image is not detected, you can select a region manually in a PDF reader that supports native cropping. Both capture and translation shortcuts can be customized in Settings.
 
-<a id="continue-research"></a>
+<a id="about-upstream"></a>
 
-## From reading papers to pursuing a research question
+## About the upstream project
 
-<a id="jadense-introduction"></a>
+The plugin itself, its design and all of its upstream features come from [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero) by [Jadense (攻玉学术)](https://jadense.cn/). This fork makes three kinds of change only: it removes the promotional blocks from the README, adds the collection quick-review window described above, and fixes detection gaps in link / appendix / code evidence. It does not change the upstream licensing intent, the plugin ID or the update feed.
 
-### Meet Jadense
-
-[![Jadense homepage in dark theme](docs/images/jadense-home-dark.png)](https://jadense.cn/)
-
-The public Jadense homepage, captured in dark theme. Click the image to visit the website.
-
-
-After a few papers, your question may shift from “What does this paper say?” to “How do these methods differ, and what evidence is still missing for my project?”
-
-**Jadense (攻玉学术)** supports that next step: organize relevant papers in a research project and keep working on the same question. Use what you have read to compare methods, organize evidence, and plan what to investigate next.
-
-<a id="research-project"></a>
-
-### Bring papers into a research project
-
-1. Select the relevant papers in Zotero and open **Jadense → Literature sync (攻玉学术 → 文献同步)** in the plugin.
-2. Choose a Jadense favorites folder, decide whether to include PDFs, and upload the selected papers.
-3. On the Jadense website, open or create a project, click **Add context (添加上下文)**, select these papers from your personal favorites, and start a conversation in the project.
-
-For example, give the project a specific task:
-
-> Based on the supplied papers, compare the study subjects, methods, and main evidence. Distinguish the authors' conclusions from inferences, list questions that need further literature searches, and draft an outline for a literature review. Clearly identify gaps in the available material.
-
-Uploading is a **one-way operation from Zotero to Jadense**. You choose whether to include PDFs, and metadata and PDF upload results are reported separately. Plugin conversations, notes, and annotations are not automatically synced to the website with the papers. If you only need reading assistance inside Zotero, you can keep using BYOK independently.
-
-[Continue your research in Jadense](https://jadense.cn/) · [Learn about projects and research materials (Chinese)](https://jadense.cn/docs/research-resources)
+Uploading papers to the Jadense web app, connecting a Jadense account and using Jadense mode still work exactly as upstream documents them; this README simply no longer funnels readers toward them. See the upstream [usage guide](docs/usage-guide.md) for those features.
 
 ## FAQ
 
-For endpoint configuration, authentication errors, model selection, scanned PDFs and sponsorship, see the [full FAQ (Chinese)](docs/faq.md).
+For endpoint configuration, authentication errors, model selection and scanned PDFs, see the [full FAQ (Chinese)](docs/faq.md) — note that its sponsorship sections describe the upstream project, not this fork.
 
 ### Do I need an account? Is it free?
 
@@ -369,40 +334,14 @@ If your installed version uses `jadense-in-zotero@jadense.com`—including websi
 
 The new version retains the existing preference namespace and history location. Do not delete your Zotero profile. Saved models, routes, and BYOK choices are preserved except for the one-time Jadense chat model switch above. The plugin still reads the [official Jadense update feed](https://jadense.cn/plugins/zotero/jadense-in-zotero/updates.json); a GitHub release does not automatically change that feed. See the [release notes (Chinese and English)](CHANGELOG.md#release-042-en) for version differences.
 
-<a id="support"></a>
-
-## How to support us
-
-Star the project, share it, report issues or contribute. Optional donations help maintain the plugin and documentation.
-
-- Leave your preferred **nickname and message**, with explicit permission to publish them in a future supporter list. Otherwise, we keep your contribution anonymous.
-- ☕ [Wechat / Alipay — support this project](support/README.md)
-
-The link opens a separate project support page with payment codes and supporter-list information. Donations do not buy subscriptions, API credits or commercial permission.
-
-## Star History
-
-<a href="https://www.star-history.com/#jadense-ai/jadense-in-zotero&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=jadense-ai/jadense-in-zotero&amp;type=Date&amp;theme=dark">
-    <img alt="Jadense in Zotero Star History Chart" src="https://api.star-history.com/svg?repos=jadense-ai/jadense-in-zotero&amp;type=Date">
-  </picture>
-</a>
-
 ## Contribute and share feedback
 
-Report problems and suggest improvements through [Issues](https://github.com/jadense-ai/jadense-in-zotero/issues). Include your plugin version, Zotero version, operating system, and steps to reproduce, with account details and private materials removed. If the plugin helps your reading, consider starring the project or sharing it with colleagues who use Zotero.
+Report plugin problems through the [upstream issue tracker](https://github.com/jadense-ai/jadense-in-zotero/issues), with the plugin version, Zotero version, operating system and reproduction steps, and with account details and private material removed — unless the behaviour only exists in this fork, in which case open an issue here. This fork is maintained for personal use; no response time is promised for third-party reports.
 
-### Independent development and validation
-
-The plugin can be developed independently, without the main application's source code, a database, or an `.env` file. See the [contribution and GitHub release guide (Chinese)](CONTRIBUTING.md#开发与本机验证) for setup, builds, and isolated Zotero checks, and [DESIGN.md](DESIGN.md) for product design.
-
-### Synchronization and releases
-
-The [contribution guide (Chinese)](CONTRIBUTING.md) covers upstream synchronization, PR checks, draft releases, and artifact verification.
+To build this branch yourself: Node 24 and pnpm 10.19.0, then `pnpm install && npm run build && npm test`. To follow an official release, `git fetch upstream --tags` and merge the new tag into `local`; the conflicts concentrate in `CHANGELOG.md` and `docs/usage-guide.md`. The upstream release script rejects four-segment versions, so tagging and artifact upload stay manual here. See [CONTRIBUTING.md](CONTRIBUTING.md) for the upstream workflow and [DESIGN.md](DESIGN.md) for product design.
 
 ## License
 
-The current project uses the [Jadense Non-Commercial License 1.0](LICENSE). Personal non-commercial use, learning, research and free redistribution under its terms are allowed. Commercial use requires separate written authorization; donations do not grant it.
+The code stays under the [Jadense Non-Commercial License 1.0](LICENSE): personal non-commercial use, learning and research are free, redistribution is free under its terms, commercial use needs separate written authorization, and downstream copies inherit the same conditions. Every local round's changes are identified in the `0.6.13.x` entries at the top of [CHANGELOG.md](CHANGELOG.md).
 
-This is source-available software, not OSI open source: the [Open Source Definition](https://opensource.org/osd) does not allow restrictions on commercial use. The new license does not revoke rights in previously MIT-licensed material or change third-party licenses. Preserved notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); historical release notes remain historical. The private Jadense application, server and trademarks are not licensed here.
+This is source-available software, not OSI open source: the [Open Source Definition](https://opensource.org/osd) does not allow restrictions on commercial use. The license does not revoke rights in previously MIT-licensed material or change third-party licenses. Preserved notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The plugin ID, the packaged update feed, the Jadense name and its trademarks belong to the upstream project and are not licensed by this fork.

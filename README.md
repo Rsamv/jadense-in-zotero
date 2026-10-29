@@ -1,425 +1,151 @@
 <p align="center">
-  <a href="https://jadense.cn/"><img src="content/icons/logo-padded.png" width="128" height="128" alt="Jadense Logo"></a>
+  <img src="content/icons/logo-padded.png" width="128" height="128" alt="Jadense Logo">
 </p>
-<h1 align="center">Jadense in Zotero</h1>
-<p align="center">攻玉学术 · Zotero AI 阅读助手</p>
+<h1 align="center">Jadense in Zotero（个人 fork）</h1>
+<p align="center">攻玉学术 Zotero 阅读插件的个人改版 · 基线官方 v0.6.13</p>
 <p align="center">
   <a href="https://www.zotero.org/download/"><img src="https://img.shields.io/badge/Zotero-8%20%7C%209%20%7C%2010-bb2222" alt="Zotero 8 / 9 / 10"></a>
-  <a href="https://github.com/jadense-ai/jadense-in-zotero/releases/latest"><img src="https://img.shields.io/github/v/release/jadense-ai/jadense-in-zotero" alt="GitHub release"></a>
+  <a href="https://github.com/Rsamv/jadense-in-zotero/releases/latest"><img src="https://img.shields.io/github/v/release/Rsamv/jadense-in-zotero" alt="fork release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Non--Commercial-16a36a" alt="Non-commercial license"></a>
-  <a href="docs/usage-guide.md"><img src="https://img.shields.io/badge/BYOK-supported-16a36a" alt="BYOK supported"></a>
 </p>
 
 **简体中文** · [English](README.en.md)
 
-> **这里是个人 fork，不是官方发布渠道。** 上游为 [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero)，本分支以官方 `v0.6.13` 为基线，叠加个人自用改动：收藏夹快速解析窗口（含逐篇评价与百分制评分、附件开源链接与附录标题扫描、本机版面统计、单篇按需深读、可折叠的本机证据框与正文小节跳页）与对照翻译缓存回收。
+> **这是个人 fork，不是官方发布渠道。** 上游是 [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero)，本分支以官方 `v0.6.13` 为基线，叠加自用改动。原 README 里的第三方 API 中转站推广、赞助二维码、Star 增长图和攻玉网页端引导已整块移除，只保留与插件使用有关的内容；官方功能说明见上游仓库与其[使用指南](docs/usage-guide.md)。
 >
-> 许可证不变，仍为 [Jadense Non-Commercial License 1.0](LICENSE)：仅供个人非商业使用，免费分发，保留原版权声明，改动已在 [CHANGELOG.md](CHANGELOG.md) 顶部的 `0.6.13.x` 条目逐轮标注，下游继承同样的非商业条件。
+> 许可证不变，仍是 [Jadense Non-Commercial License 1.0](LICENSE)：仅限个人非商业自用，免费分发，须保留原版权声明，改动已在 [CHANGELOG.md](CHANGELOG.md) 顶部的 `0.6.13.x` 条目逐轮标注，下游继承同样的非商业条件。
 >
-> 本地版本号用四段（`0.6.13.1` → `0.6.13.13`），大于当轮官方、小于将来的官方 `0.6.14`。插件 ID 与包内 `update_url` 保持官方值，因此官方发布更高版本时自动更新会顶掉本 fork 的构建——自用是预期行为，别人若要长期留在改版上需关闭自动更新。
+> 本机构建版本号用四段（`0.6.13.1` → `0.6.13.13`），大于当轮官方、小于将来的官方 `0.6.14`。插件 ID 与包内 `update_url` 保持官方值，所以官方发布更高版本时，Zotero 自动更新会顶掉这里的构建——自用场景下这是预期行为；要长期留在改版上请关闭自动更新。
 
-**在 Zotero 中读懂论文，把阅读所得变成下一步研究的起点。**
+**在 Zotero 中读懂论文，并把「实际有什么」和「模型说什么」分开。**
 
-[论文问答](docs/usage-guide.md#paper-chat) · [原文批注](docs/usage-guide.md#paper-analysis) · [选文翻译](docs/usage-guide.md#selection-translation) · [全文翻译与本机 OCR](docs/usage-guide.md#full-translation) · [图表解读](docs/usage-guide.md#figures) · [参考文献核验与导入](docs/usage-guide.md#references)
-
-Jadense in Zotero 是[攻玉学术（Jadense）](https://jadense.cn/)推出的源码公开 AI 阅读助手。围绕正在读的论文提问，把解析重点留在原文旁，遇到难懂的段落或图表时继续追问，让阅读、理解与核对在 Zotero 中连起来。
-
-**非商业自用免费 · 禁止商用 · 支持自带 API Key（BYOK）· 攻玉账号可选**
-
-**[下载插件](https://github.com/jadense-ai/jadense-in-zotero/releases/latest)** · [先看依赖与安装方式](#requirements) · [快速开始](#quick-start) · [了解攻玉学术](#continue-research)
-
-插件源码公开，使用须遵守[非商业许可证](LICENSE)；模型调用费用由所选服务商或攻玉账号的订阅、积分规则决定。
-
-
-**v0.6.13 候选版，尚未发布：**文献解析与 PDF 对照翻译保留进度并支持继续，解析完成状态不再被抽样说明误标为失败；选文、简阅与 PDF 译文新增独立字号或缩放调整，并明确 PDF 失效任务的重新翻译入口。[操作、升级与已知限制](docs/usage-guide.md#update-0613)。
-
-**v0.6.12 已发布：**发现前沿分为首页、进行和结果视图；更新文献卡片与收藏操作，兴趣档案新增交集／并集检索模式和帮助提示。官方完整包包含发现前沿，公开源码构建为基础版。[操作与升级说明](docs/usage-guide.md#update-0612) · [下载正式安装包](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12)。
-
-**攻玉模式有什么用？** 在工作台顶栏开启后，文献分类的 Jev 判断可走攻玉账号，无需另配 TypeSafe 密钥；本机 OCR 未就绪时，可选择攻玉 OCR 接力；前沿雷达还可从 arXiv 扩展到 13 个公开文献来源。模式默认关闭，需先连接具备相应权限的攻玉账号；模型调用可能消耗积分。关闭时仍可通过自备密钥使用通用功能。[查看配置步骤](docs/usage-guide.md#jadense-mode)
-
-离线套装内含新版 [PDF 安装指南](<docs/jadense-in-zotero 离线安装详细流程.pdf>)。
+本分支的主线是收藏夹批量综述窗口：对一整个收藏夹（含子收藏夹）发起**一次**模型调用，得到总览、逐篇要点、横向对比、趋势与空白，并给每篇 0–100 的评价；扫描证据全部来自本机 PDF，正文默认不出机器。
 
 <!-- release-summary:start -->
-## 最近版本
+## 上游版本基线
+
+本 fork 的代码基线是官方 v0.6.13（尚未发布）。以下是它之前的官方正式版，功能差异以 [CHANGELOG.md](CHANGELOG.md) 为准：
 
 - [v0.6.12](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12) — 发现前沿分离首页、进行与结果，更新文献卡片和收藏操作，新增交集／并集检索与帮助。
 - [v0.6.11](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.11) — 发现前沿欢迎、扫描与历史布局更新，修复文本居中，改进收藏 PDF 上传恢复与翻译反馈。
-- [v0.6.10](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.10) — PDF 与 OCR 引擎可分别选择存储位置；BYOK 可按功能设置思考档位，攻玉对话模型一次性设为 `qwen-3.8-flash`。
-- [v0.6.9](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.9) — 新增简阅模式与主动翻译，改进模型思考档位、翻译进度反馈和 PDF 对照工具栏。
-- [v0.6.8](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.8) — 前沿雷达支持通用 arXiv 与攻玉 13 来源追踪，新增结构化 AI 预评和独立模型设置；攻玉模式可接力 Jev 分类与 OCR。
-
-[完整版本历史](CHANGELOG.md)
+- [v0.6.10](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.10) — PDF 与 OCR 引擎可分别选择存储位置；BYOK 可按功能设置思考档位。
+- [v0.6.9](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.9) — 新增简阅模式与主动翻译，改进模型思考档位与翻译进度反馈。
 <!-- release-summary:end -->
 
-0.6.12 正式草稿原件已在 Windows 11 / Zotero 10.0.6 完成原生验收；详情见 [Release 验证记录](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12)。其他系统、Zotero 8/9 和真实付费服务未实测。
+## 与官方 v0.6.13 的功能差异
 
-<a id="api-recommendation"></a>
+### 一、收藏夹快速解析窗口（官方没有这个功能）
 
-## API推荐：Toodoo AI，让好模型用得起、用得顺
+在 Zotero 收藏夹右键菜单打开独立窗口，递归读取该收藏夹及其子收藏夹的文献（跳过附件、笔记与回收站条目），一次调用产出结构化综述。
 
-**读论文、做翻译、理思路，想用好 AI，又想把钱花在刀刃上？来看看 [Toodoo AI（toodooai.com）](https://toodooai.com/)。** 从 GPT 到智谱 GLM、小米 MiMo 等先进国产模型，一个平台按需选择，为你的 Zotero 接上得力的 AI 助手。
+| 能力 | 具体行为 |
+| --- | --- |
+| 输入范围 | 题录（作者、年份、标题、期刊、收藏名、标签）、摘要、链接文本、附录一级标题、版面统计。**PDF 正文不发送**；单篇按需深读是唯一会发送正文片段的入口，且需逐条确认。 |
+| 逐篇评价 | 0–100 分：问题价值、方法创新、证据强度、可复现性、应用潜力各 20 分；写作、排版、图表、期刊、引用不计分。档位由分数折算（80+ 高、65–79 中、50–64 低），同一批文献同一把尺子；材料只有题录或摘要被截断时上限 45 分。 |
+| 代码／数据三态 | `yes` 有硬定义：摘要或附录里给出仓库网址（github／gitlab／huggingface／zenodo 等），或明确写「源代码已开源／已发布／可获取」。项目主页、数据集网站、论文落地页、「将开源」「审稿后开源」都不算。模型在无证据时写 `yes`，客户端降为「未见说明」。 |
+| 附件取证 | 整篇读取（超过 80 页取首尾两半，单附件上限 60 MB）。文字层抽取 + **超链接注释**（`getAnnotations()` 取 `Link`）双通道合并去重——本机样本里 610 条链接注释有 572 条在文字层根本找不到。arXiv／DOI／OpenReview 落地页、检索站点、断行残串、参考文献里的仓库都不算发现。 |
+| 附录识别 | 只收一级标题，子小节（`D.1`）、坐标轴刻度、正文句子不混入；标记从 `VII` 这类续编开始也能取到；编号与标题分行、小型大写碎片、行尾断词都能拼回。读到 `Appendix`／`Supplementary Material`／`附录` 但排不出标题时标「有附录（未列小节）」，模型可以说「有附录」但禁止猜节数或标题。 |
+| 版面统计 | 本机数出一级小节标题（最多 12 条）、图／表／参考文献数量，以及消融／基线／人工评测三组关键词命中次数。**只有标题与计数外发**，提示词把这一行标成「本机数出，非模型判断」。 |
+| 正文小节跳页 | 每个一级小节记下所在页与附件，卡片上的标题是按钮，点击调 `Zotero.Reader.open(附件 itemID, { pageIndex })` 翻到那一页；附录小节同一入口。跳页数据只在本机流转，不进请求载荷、不进「复制全文」，历史记录保存它，重开旧综述仍能跳。 |
+| 单篇按需深读 | 批量综述结束后，每篇卡片下方「深读这篇（单独一次请求）」。先在本机切有界摘录（最多 3 节、每节 400 字、合计 1200 字；引言取节尾，方法／结论／实验取节首），再弹确认框逐条报清送出多少字、是哪几节、在第几页、为切它本机读了多少页，并写明摘录之外的正文、图表、公式与附录都不发送。确认后才派发那一次。 |
+| 结果卡片 | 「本机证据」折叠框（附件账目、版面统计、正文小节、本地链接、附录标题）与下方模型评价分成两块，谁读的、谁判的一眼可分。本地链接经 `Zotero.launchURL` 交给系统浏览器，只接受 http/https——历史里混进的 `javascript:` 不会变成可执行动作。 |
+| 容错 | 模型返回的 JSON 有中文标点或漏转义引号时**不再整篇报废**：原样解析 → 语法修复 → 逐字段恢复，并如实提示「已逐字段恢复，跳过 N 处无法解析的内容」；恢复出的空壳条目不计入覆盖。 |
+| 失败不伪装 | 每篇带 `scanOutcome`（`parsed`／`noAttachment`／`oversize`／`unreadable`／`unavailable`）。Zotero 10 的 `Items.get` 只查缓存、`getAttachments()` 会抛 `UnloadedDataException`，旧版把这个异常吞成「读了 0 页 · 未见链接」——现在改走 `getAsync` 并在失败时 `loadDataType('childItems')` 重试，卡片写「未能读取附件（重新生成会重试）」，回执补「N 篇未能读取附件列表」。 |
+| 结果只用于阅读 | 不写入 Zotero 条目、笔记或标签；综述历史保存在本机，可复制全文、可删除、可重开。 |
 
-Toodoo AI 主打**低价、正品模型、稳定接入**：这是平台的服务定位；具体模型与渠道说明以平台展示为准。官网提供模型比价、逐次调用费用记录和接入支持，让你选之前能比价、用之后能查账。日常翻译、文献问答、摘要整理，可以先从实惠的模型试起，再按任务需要选择更强的模型，把预算用在真正需要的地方。
+### 二、对照翻译的缓存回收与自动保存
 
-### API 是什么？不懂编程，也能用！
+- 发布新成稿后只保留当前与上一版快照，更早的成稿和写入中断留下的临时稿在下一次打开对照翻译时后台回收；版面解析缓存同样只保留两代。
+- 已删除文献的对照成果与版面缓存在连续两次确认（间隔一分钟以上）后清理，文献库尚未就绪时一律不删。想保留的话把首选项 `extensions.jadenseInZotero.removeOrphanTranslatedPDF` 设为 `false`（默认开启清理）。
+- 对照译文 PDF 完成后可自动保存到上次导出的目录（`extensions.jadenseInZotero.autoSaveTranslatedPDF`，默认开启），以文献标题命名，不会覆盖原 PDF 或已有文件。
+- 缓存清理脚本随本仓库外的工具单独维护，删除前一定先出 dry-run 清单，插件或 Zotero 正在写入时拒绝执行。
 
-把 **API** 想成“软件与 AI 之间的连接插口”：你在 Zotero 里点击翻译或提问，插件就通过这个插口把内容交给 AI，再把回答送回阅读界面。**API Key 是你的专属通行证**，用来识别账号并扣除相应额度；在插件中填好服务地址、密钥和模型即可使用，无需自己写代码。
+### 三、错误提示
 
-对读论文的人来说，API 的好处很直接：
+失败提示带类型前缀（如【上游服务错误 · 503】），**只投影错误码、HTTP 状态与错误类名**，不回显上游服务正文或密钥。
 
-- **少复制粘贴，阅读更连贯**：在支持的插件功能中直接翻译、提问，把时间留给理解论文。
-- **用多少，付多少**：文本模型通常按输入和输出的 Token 计费。Token 可以粗略理解为 AI 处理的小段文字，并不等于字数；发给 AI 的正文、历史对话和生成的回答都可能计费。偶尔使用也能灵活安排预算。
-- **模型自由选，省钱有方法**：同一平台比较不同模型，按自己的译文效果、响应速度和价格选择，不必给每个模型都单独购买月度会员。
-- **开支看得见**：查看每次调用的用量与费用，给密钥设置额度，让花费心中有数。
+### 四、刻意保持不动的部分
 
-### GPT、GLM、MiMo：选模型，也要看优惠
+- **BYOK 非幂等契约**：已产生输出或结果未确认的请求不会自动重发（防重复计费），只有用户在提供商后台核对后显式授权，才沿用同一会话 ID 重发一次。逐篇深读沿用同一契约。本分支不改上游的重试与执行状态判定，并有回归测试钉住这条边界。
+- **计费目的地**：快速解析与逐篇深读都沿用「文献解析」功能模型，不新增计费入口；一次批量综述只有一次派发。
+- **模型请求直连**：BYOK 请求直接发给你配置的 Provider，不经过任何中转站点；本 fork 移除了 README 里的第三方 API 推广，也没有加入任何统计或回流地址。
+- **插件 ID 与更新源**：保持官方值，因此官方版本能覆盖升级本 fork 的构建。
 
-**GPT 低至 0.2 折，MiMo 福利价 1 折，国产模型也有好价！** 以下优惠于 **2026-09-23** 根据平台有效模型价格与分组倍率核对：
+## 依赖
 
-| 模型与适用分组 | 当前折扣 | 可以从这些任务开始试用 |
-| --- | --- | --- |
-| GPT-6 Sol · GPT PLUS 组 | **0.2 折**，按站内模型基准价的 2% 计费，省 98% | 英文论文阅读、复杂问题讨论、写作润色 |
-| GPT-6 Sol · GPT PRO 组 | **0.55 折**，按站内模型基准价的 5.5% 计费，省 94.5% | 按账号可用分组选择 GPT 接入 |
-| MiMo-V2.6-Flash / Pro、MiMo-V2.5 / Pro · 福利模型（不定期）组 | **1 折**，按站内模型基准价的 10% 计费，省 90% | 日常问答、推理辅助、文献内容整理 |
-| GLM-5.2 · 国产模型组 | **7 折**，比平台列示的官方参考价省 30% | 中文文献问答、摘要整理、中英文翻译 |
-| GLM-5.1 / GLM-5.3 · 国产模型组 | **8 折**，比平台列示的官方参考价省 20% | 根据论文难度与实际效果选择型号 |
-| Qwen3.8-Flash · 国产模型组 | **9 折**，比平台列示的官方参考价省 10% | 日常翻译、文本整理 |
-| Kimi-K2.6 · 国产模型组 | **8 折**，比平台列示的官方参考价省 20% | 长文阅读、内容归纳 |
-| DeepSeek-V4-Flash · 国产模型组 | **8 折**，对比同一时段的平台官方参考价；另有夜间低价 | 推理问答、文献分析 |
+- **宿主**：Zotero 桌面版 8.0–10.0.*。自动识别 PDF 图片需要 Zotero 10.0.1 及以上的兼容 PDF 阅读器。
+- **AI 接入**：二选一。自带 API Key（BYOK：Provider 的 API Key、Base URL 和模型 ID，不需要攻玉账号），或连接攻玉学术账号与插件令牌。模型调用费用按所选服务商或攻玉账号规则计算。
+- **本机 OCR / 版面解析引擎**：问答、默认选文翻译、参考文献提取都不需要 Python；只有识别扫描页或做 PDF 对照排版翻译时才需要，首次安装需联网并预留数 GB 空间。步骤见上游文档 [docs/local-ocr.md](docs/local-ocr.md) 与 [docs/pdf-engine.md](docs/pdf-engine.md)。
 
-**小数点别看错：0.2 折是付 2%，不是付 20%。** 例如 GPT-6 Sol 在输入长度不超过 272,000 Token、选择 GPT PLUS 组时，每百万 Token 的输入价约 **¥0.28**、输出价约 **¥1.40**；MiMo-V2.6-Flash 在上述福利组的输入价为 **¥0.10**、输出价为 **¥0.20**。这里的“每百万”是计价单位，不是最低购买量；实际按用量计算。输入是“交给 AI 的内容”，输出是“AI 写给你的回答”，两部分分别收费。
+## 安装本 fork
 
-选购时留意以下几点，就能把优惠用明白：
+1. 从 [Releases](https://github.com/Rsamv/jadense-in-zotero/releases/latest) 下载 `.xpi`（每个 Release 附 `SHA256SUMS`）。**不要把 Source code 压缩包当安装包。**
+2. Zotero「工具 → 插件 → 齿轮 → 从文件安装插件」，选中该 XPI。
+3. 已装官方版的用户注意：本 fork 与官方共用插件 ID `jadense-in-zotero@jadense.cn`，装上去即覆盖官方版本；若装过 `@jadense.com` 身份的旧版，先禁用旧插件再手动安装，勿同时启用两种身份。
+4. 若要长期留在改版上，在 Zotero 插件设置里关闭自动更新，否则官方发布更高版本时会覆盖。
 
-- **选对型号和分组**：GLM、Qwen、Kimi、DeepSeek 上述优惠对应模型名前带 `bailian/` 的渠道，不代表整个品牌所有型号同价。GPT PLUS / GPT PRO 是本站 **API 分组名称**，不代表购买了 ChatGPT Plus / Pro 会员。
-- **按账号资格使用**：分组可用性及累计充值门槛以登录后展示为准；MiMo 所在分组为“不定期福利”，活动可能调整。GPT 与 MiMo 的折数以站内模型基准价为分母，不等同于已逐项核验所有原厂价。
-- **长文和时段也会影响价格**：GPT 长上下文另有价档；上述 DeepSeek 型号在北京时间 22:00 至次日 08:00 的输入、输出价为日间的一半。缓存等额外计费项按模型详情执行，表中折扣不另行叠加充值赠额。
+## 版本命名
 
-**[查看最新价格对比 →](https://toodooai.com/price-comparison)** · **[浏览全部模型 →](https://toodooai.com/pricing)**。价格表是本次核对的快照，实际价格、模型可用性和活动条件以平台实时展示为准。
+包内版本是四段 `0.6.13.x`；本仓库的 Release 序号与包内版号一一对应，规则为 `v0.(10 + x)`——`v0.16` 对应 `0.6.13.6`，`v0.23` 对应 `0.6.13.13`。每轮发布只保留最新一条 Release，旧的连同其标签一起删除，避免装到过期包。
 
-### 想直接用 ChatGPT？也有 GPT 会员代订阅服务
+## 从源码构建与跟随官方更新
 
-如果你更习惯在 ChatGPT 网页或 App 中直接聊天，Toodoo AI 还提供 **GPT 会员代订阅服务**，具体套餐、价格、交付方式与售后请向平台咨询。
+```bash
+# 环境：Node 24、pnpm 10.19.0
+pnpm install
+npm run build          # tsc --noEmit → scripts/build.mjs → scripts/verify-release.mjs
+npm test               # vitest
 
-**怎么选？** 想在 Zotero 插件中调用模型，选择 API 服务；想在 ChatGPT 网页或 App 中使用会员功能，了解会员代订阅。两者分别计费，购买会员不会自动获得插件可用的 API 余额。
+# 跟随官方发版
+git fetch upstream --tags
+git checkout local
+git merge upstream/tags/v0.6.14   # 冲突集中在 CHANGELOG.md 与 docs/usage-guide.md
+```
 
-**[前往 Toodoo AI，挑选你的 AI 助手 →](https://toodooai.com/)** 先用一小段熟悉的论文试试效果，再决定适合自己的模型和预算。首次配置可查看[平台接入文档](https://toodooai.com/docs)，或通过官网 QQ 群 **658248617** 咨询。使用 API 时，所选内容会发送给服务平台处理；密钥请妥善保管，不要发到群聊或公开截图中。
+上游 `.github/scripts/release.mjs resolve` 不接受四段版本号，直接照搬上游 workflow 会让 CI 变红；本 fork 手动打标签、手动上传 XPI。完整开发说明见上游 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-<a id="requirements"></a>
-
-## 先看：依赖、安装方式与功能入口
-
-### 插件依赖
-
-- **宿主程序**：需要 [Zotero 桌面版 8.0–10.0.*](https://www.zotero.org/download/)。自动识别 PDF 图片需要 Zotero 10.0.1 及以上版本的兼容 PDF 阅读器。
-- **AI 接入**：要使用 AI 功能，需要配置一种 AI 服务。可以使用 [BYOK 自带 API Key](docs/usage-guide.md#byok-provider)（Provider 的 API Key、Base URL 和模型 ID，不需要攻玉账号），也可以[连接攻玉学术](docs/usage-guide.md#connect)（攻玉账号和插件令牌）。模型调用费用按所选服务商或攻玉账号规则计算。
-- **本机 OCR**：问答和默认选文翻译不需要 Python；全文 Markdown、翻译和参考文献提取默认使用 PDF 文字层，无需 Python；仅在启用[可选 OCR](docs/local-ocr.md)识别扫描页时需要本机运行环境、Python 依赖和模型。首次安装需要联网并预留数 GB 磁盘空间。
-- **插件之外的文献工具**：Zotero Connector 不是本插件的依赖；它只负责从浏览器收集文献，是否安装不影响本插件在 Zotero 中阅读本地文献和 PDF。
-
-### 当前可用的安装方式
-
-| 安装方式 | 操作 | 说明 |
-| --- | --- | --- |
-| [官网插件详情页](https://jadense.cn/plugin/zotero) | 在页面的下载入口获取 `.xpi`，再按 [Zotero 官方插件安装说明](https://www.zotero.org/support/plugins) 导入 | 以官网页面当前显示的版本、兼容范围和下载状态为准 |
-| [GitHub Release](https://github.com/jadense-ai/jadense-in-zotero/releases/latest) | 下载当前正式版 XPI，在 Zotero「工具 → 插件 → 齿轮 → 从文件安装插件」中打开 | 最近正式版为 [v0.6.12](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12)，同时提供元数据和 SHA-256 校验和 |
-| Zotero 自动更新 | 在 Zotero「工具 → 插件 → 齿轮 → Check for Updates」中检查 | 使用[攻玉官方更新清单](https://jadense.cn/plugins/zotero/jadense-in-zotero/updates.json)；该渠道与 GitHub Release 独立维护，若未出现新版本请使用上面的手动安装方式 |
-| 从源码构建 | 按[贡献指南](CONTRIBUTING.md#开发与本机验证)使用 Node 24、pnpm 10.19.0 构建，再安装 `release/zotero/v0.6.13/jadense-in-zotero-v0.6.13.xpi` | 当前源码为尚未发布的 0.6.13 基础版；前沿雷达仅随官方完整安装包提供 |
-
-以上渠道最终安装的都是 Zotero `.xpi` 插件：不要把 GitHub 的 **Source code** 压缩包当作安装包，也不要同时启用旧的 `.com` 插件身份。旧版本升级和身份迁移见[升级说明](#upgrade)。
-
-
-<a id="ocr-installation"></a>
-
-## OCR 依赖安装
-
-0.5.0 的全文 Markdown、全文翻译和参考文献提取默认使用文字层；识别扫描页可按需安装 OCR。普通问答和默认选文翻译无需 Python。在 **设置 → 外置依赖配置** 点击 **启用本机 OCR**，等待“已就绪”；失败后查看日志并点击 **继续准备**。首次需联网下载 Python、依赖和模型，预留数 GB 空间，无需预装 Python 或配置 CUDA。
-
-**[详细 OCR 安装指南](docs/local-ocr.md)**：包含[设置界面操作](docs/local-ocr.md#settings)、[Windows](docs/local-ocr.md#windows)、[Linux](docs/local-ocr.md#linux)、[macOS](docs/local-ocr.md#macos) 手动安装，以及[模型验证](docs/local-ocr.md#models)、[修复与重装](docs/local-ocr.md#repair)。指南说明 v0.4.10 的操作与旧版差异。
-
-<a id="pdf-engine-installation"></a>
-
-## 版面解析引擎安装（0.6.0）
-
-1. **系统自动安装**：进入 **设置 → 外置依赖配置 → 版面解析引擎 → 准备 PDF 翻译引擎**。v0.6.5 正式 XPI 在 Windows x64 优先下载匹配的完整引擎包；其他平台按库内安装器准备独立 Python、锁定依赖、模型和字体。
-2. **手动/离线安装**：取得与所装 XPI 版本匹配的 Windows x64 完整 ZIP 后点击 **导入离线包**，无需预装 Python 或管理员权限。v0.6.5 的完整套装及单独引擎包见 [v0.6.5 附件](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.5)。
-3. **库内备用源**：使用[仓库内安装器与锁定源码](content/pdf-translation/)手动安装，再点击 **检测已安装引擎**。此备用路径仍需下载依赖与资产，不是离线二进制镜像。
-
-[查看完整安装指南、平台限制与故障处理](docs/pdf-engine.md)。版面解析引擎与 OCR 独立，不影响普通文字层阅读。
-
-### 安装环境与网络设置
-
-- **Windows x64 推荐完整离线包**：网络受限时，从 [v0.6.5 附件](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.5)取得完整离线 ZIP，按[安装指南](docs/usage-guide.md#windows-x64-zip-离线安装)安装 XPI 并分别导入两个引擎 ZIP；也可单独下载约 433 MiB 的匹配 PDF 引擎 ZIP。无需预装 Python/uv 或管理员权限，完整套装建议预留 6 GiB。不要混用旧版同名引擎包，安装时以 XPI 内清单摘要为准。
-- **网络必须覆盖下载链路**：自动安装不仅要能打开 GitHub 首页，还需要访问 Release 附件重定向地址；旧式逐项安装还会访问 Python、PyPI 和模型资源。AI 服务可用、浏览器能上网或修改 OCR 下载源，都不保证 PDF 引擎安装器可联网。
-- **代理应覆盖安装进程**：浏览器代理扩展不会自动配置 Windows PowerShell。使用单位或网络允许的 HTTP 代理；手动安装时在同一 PowerShell 窗口设置 .NET 代理及 `HTTPS_PROXY` / `HTTP_PROXY`，详见[代理操作步骤](docs/pdf-engine.md#network-environment)。只在终端设置变量后从桌面打开已有 Zotero，不保证它能继承这些设置。
-- **受管电脑**：安装需要允许当前用户写入 profile、启动 PowerShell 和 Python。遇到明确策略拦截时联系管理员；不要通过关闭证书/哈希校验、防火墙或反复提升管理员权限排查普通下载错误。macOS、Linux、Windows ARM64 暂无已验收的完整离线包。
-- **看到 `install.ps1:41 Invoke-WebRequest 无法连接到远程服务器`**：这是 uv 安装工具下载失败，尚未安装 PDF 引擎；先导入完整包或检查安装进程的网络/代理，不必更换翻译模型。
-
-**Windows 策略提示：**插件会用独立 PowerShell 子进程执行安装器，并为该进程传入 `-ExecutionPolicy Bypass`；通常不需要用户调整执行策略。若单位组策略、AppLocker/WDAC 或安全软件仍阻止 PowerShell 启动/写入 Zotero profile，请管理员为 Jadense 插件安装放行所需的当前用户权限。不要用管理员身份反复重试，也不要永久降低整台电脑的安全策略。
-
-## 目录
-
-- [API推荐：Toodoo AI](#api-recommendation)
-- [先看：依赖、安装方式与功能入口](#requirements)
-- [OCR 依赖安装](#ocr-installation)
-- [版面解析引擎安装](#pdf-engine-installation)
-- [如何使用本插件](#quick-start)
-  - [1. 安装与打开工作台](#安装)
-  - [2. 选择 AI 接入方式](#ai-connection)
-    - [2.1 自带 API Key（BYOK）](#使用-byok)
-    - [2.2 连接攻玉](#连接攻玉)
-  - [3. 完成第一次阅读](#first-reading)
-    - [问答、选文翻译与解析](#first-reading)
-    - [全文翻译、参考文献与图片解读](#more-reading)
-  - [4. 设置显示语言与主题](#显示语言与主题)
-- [阅读与解析：功能介绍](#阅读与解析)
-- [Zotero 入门指南](docs/zotero-guide.md) · [完整图文指南](docs/usage-guide.md)
-- [常见问题](#常见问题)
-  - [账号与费用](#必须注册吗是否免费) · [数据与凭据](#数据与凭据)
-  - [兼容范围与阅读限制](#支持哪些版本有哪些阅读限制) · [升级说明](#upgrade)
-- [在攻玉继续研究](#continue-research)
-  - [认识攻玉学术](#jadense-introduction) · [把文献带入研究项目](#research-project)
-- [如何支持我们](#support) · [微信 / 支付宝赞助页](support/README.md)
-- [参与和反馈](#参与和反馈) · [发布流程](CONTRIBUTING.md#发布正式版本)
-- [许可证](#许可证)
-
-<a id="quick-start"></a>
-
-## 如何使用本插件
-
-**安装插件 → 配置一种 AI 接入方式 → 选择模型 → 打开 PDF 开始阅读。** 问答与默认选文翻译无需 Python；文字层全文任务无需 Python；扫描页需要 OCR 时，在「设置 → 外置依赖配置」准备依赖与模型，首次预留数 GB 空间。BYOK 需要能访问所配置的模型 API。[OCR 安装与故障处理](docs/local-ocr.md)。
-
-下面给出最短上手步骤。[完整图文使用指南](docs/usage-guide.md)逐步说明提供商、模型、攻玉令牌和阅读操作。新接触 Zotero 的用户可先读 [Zotero 入门](docs/zotero-guide.md)。
-
-<a id="安装"></a>
-
-### 1. 安装与打开工作台
-
-1. 从 [最新 Release](https://github.com/jadense-ai/jadense-in-zotero/releases/latest) 下载 `.xpi` 插件文件，当前正式版为 **0.6.12**。安装过旧版的用户请先查看下方[升级说明](#upgrade)。
-2. 在 Zotero 插件管理器中选择「从文件安装插件」，选中下载的 XPI。
-3. 从 Zotero 的 Jadense 入口打开工作台，按自己的需要选择一种接入方式。
-
-<a id="ai-connection"></a>
-
-### 2. 选择 AI 接入方式
-
-两种方式使用同一安装包，均可用于文献问答、翻译、解析和图片解读；图片能力取决于所选模型。
-
-| 接入方式 | 适合你，如果…… | 准备什么 |
-| --- | --- | --- |
-| 自带 API Key（BYOK） | 已有模型服务，希望自己选择提供商和模型 | 服务商的 API Key、Base URL 和模型 ID，无需攻玉账号 |
-| 连接攻玉 | 希望使用攻玉账号的模型服务，并把文献用于后续研究 | 攻玉账号与插件令牌 |
-
-攻玉 AI 请求需要服务端支持临时执行 V1 协议；旧服务端会提示升级。待确认请求可在「恢复结果」中读取已有结果，打开历史不会自动重发。BYOK 可独立使用，未确认的第三方请求不会自动重发。参考文献批量 AI 默认关闭，可在功能配置中显式开启。
-
-<a id="使用-byok"></a>
-
-#### 2.1 自带 API Key（BYOK）
-
-1. 在工作台齿轮「设置 → BYOK」添加 Provider，选择 OpenAI Chat Completions、OpenAI Responses 或 Anthropic Messages 协议，填写 Base URL 和 API Key。
-2. 添加模型，填写模型 ID，并按服务商要求设置输出上限；可用连接测试检查配置。
-3. 在「设置 → 功能配置」为需要使用的功能选择该 BYOK 模型。默认开启「自动跟随当前对话模型」，其他功能使用当前对话模型；关闭后可分别选择实时翻译、文献解析和图片解读模型。
-
-![在 BYOK 中配置提供商、协议、API 基础地址与密钥](docs/images/guide-byok-provider.png)
-
-图示为当前插件构建的浏览器预览，使用虚构配置；请替换示例地址和密钥，不要直接照抄。[下一步：添加模型并选择功能模型](docs/usage-guide.md#byok-model)。
-
-插件直接向你配置的 Provider 发起 BYOK 模型请求。「文献解析 → 解析配置」也可调整解析模型，与功能配置中的选择共用；更换或删除模型不会把失败请求自动转发给其他 Provider。
-
-<a id="连接攻玉"></a>
-
-#### 2.2 连接攻玉
-
-1. 在[攻玉学术](https://jadense.cn/)的「设置 → 集成 → 连接 Jadense in Zotero」创建令牌。
-2. 在插件「设置 → 连接攻玉」粘贴插件令牌并保存。
-3. 在「设置 → 功能配置」选择账号可用的模型。「攻玉学术 → 用户信息」的「你的攻玉」集中显示账号、订阅、可用积分及来源，以及签到奖励和连续天数。
-
-「用户信息」顶部提供「前往攻玉 / 打开签到页 / 订阅与用量」三个网页入口，未连接时也可打开。签到在网页完成后，可在「你的攻玉」标题右侧刷新状态；账号和积分分别加载，单项失败不影响另一项显示。
-
-<a id="first-reading"></a>
-
-### 3. 完成第一次阅读
-
-#### 3.1 从选文翻译到论文问答
-
-打开一篇可选中文字的 PDF，选中一个暂时没读懂的段落，按翻译快捷键查看译文。再点击 PDF 工具条的「提问」，输入：
-
-> 请解释这篇论文的核心研究问题，并指出我应该重点核对哪些方法与实验结果。
-
-准备精读时，点击「解析」查看总结、笔记和原文批注。更多操作说明就在工作台的「上手指南」中。
-
-![Zotero PDF 选文工具条中的智能翻译与对话入口](docs/images/guide-selection-actions.png)
-
-图示为 Zotero 10.0.2 隔离环境的合成论文；选中文本后使用「智能翻译」，或开启/追加对话。
-
-<a id="more-reading"></a>
-
-#### 3.2 继续全文阅读、追踪引用与看图
-
-- [全文翻译](docs/usage-guide.md#full-translation)：按段阅读译文，在定位模式回到原文。
-- [文献解析](docs/usage-guide.md#paper-analysis)：查看总结、笔记及批注。
-- [参考文献](docs/usage-guide.md#references)：核验来源后导入已验证条目。
-- [图片解读](docs/usage-guide.md#figures)：自动识图、手动框选或上传图片。
-
-<a id="显示语言与主题"></a>
-
-### 4. 设置显示语言与主题
-
-在「设置 → 常规」选择适合你的界面语言和主题；Zotero 原生插件设置也提供相同配置。
-
-- **显示语言**：跟随 Zotero、简体中文或 English，默认跟随。中文 Zotero 使用简体中文，其他语言使用英文。保存后重启 Zotero 生效，仅重开工作台不会切换；界面语言不改变翻译方向、AI 输出要求、文献或既有历史。
-- **主题设置**：跟随 Zotero、浅色或深色，默认跟随，立即同步已打开的插件界面。原有浅深偏好继续生效；侧栏按钮也可切换并保存主题，草稿和进行中的生成会保留。
-- **字号与翻译浮窗**：插件字号支持 12–24px；可选择普通或毛玻璃浮窗并调整背景透明度。选文浮窗可拖动标题、从边角缩放，左下角「外观」可直接调整样式。全文侧栏使用不透明背景与独立正文排版，可调整宽度。透明度只影响背景；毛玻璃需要宿主图形能力，不可用时保留普通背景。
-
-工作台、阅读器工具、指南、原生设置、菜单和提示均支持中英文。Zotero 窗口外框、系统标题栏和 PDF 页面外观继续由 Zotero 管理。
-
-## 阅读与解析
-
-### [先把一篇论文的重点留在原文旁](docs/usage-guide.md#paper-analysis)
-
-在 PDF 工具条点击「解析」，查看论文总结与详细笔记，并通过 Zotero 原生批注回到对应段落核对。生成的批注可编辑、筛选和随 PDF 导出，不覆盖你的人工批注；未能定位到原文的内容仍可在解析笔记中查看。
-
-### [带着问题读，而不只是得到一段总结](docs/usage-guide.md#paper-chat)
-
-点击「提问」，围绕当前论文开始对话；也可以关联 Zotero 文献、PDF 或选文，询问「作者为什么选择这种方法？」「这一结论依赖哪些条件？」。对话历史保存在本机，方便接着问、回头看。
-
-### [遇到难懂的段落，就地翻译](docs/usage-guide.md#selection-translation)
-
-选中文本后点击选区弹出栏的「智能翻译」，或按 `Ctrl+Alt+T`（macOS：`⌘+Alt+T`），在阅读器浮窗中查看译文。支持 32 种语言选项，可临时调整当前选文的翻译方向；已有文章语言偏好继续生效。阅读操作中的「对照翻译」进入 PDF 排版翻译，侧栏「全文翻译」用于段落译文；选文翻译使用选区入口或快捷键。
-
-### [翻译整篇 PDF，随时回到原文核对](docs/usage-guide.md#full-translation)
-
-在阅读操作中选择「全文翻译」，按段查看译文并定位原文。全文译文在阅读器侧栏连续展示，支持目录、独立字号/行距和阅读位置恢复；阅读模式专注浏览，定位模式可点击段落核对原文。隐藏侧栏后任务继续；中断或重启后可从翻译历史手动继续，保留已经完成的部分。在「设置 → 功能配置 → 全文翻译」选择 AI 或 Bing/Google。全文翻译默认读取文字层；扫描页可启用本机 OCR，再发送提取正文。首次翻译会提示费用与稳定性，此段落阅读入口与下方新增 PDF 排版翻译独立。
-
-### [PDF 对照与原位翻译（0.6.0）](docs/usage-guide.md#pdf-translation-060)
-
-从 PDF 阅读操作进入「对照翻译」，并排查看原文和译文，也可切换整页译文或独立窗口用于多屏阅读。支持同步/解除同步滚动，保存仅译文 PDF 或原文与译文对照 PDF，不覆盖原附件。
-
-### [简阅模式（0.6.9）](docs/usage-guide.md#simple-reading-069)
-
-在 PDF 工具栏打开「简阅模式」后，左侧保留原生 PDF，右侧阅读 Zotero 提取的结构化 HTML。需要译文时主动点击翻译，结果只更新右侧内容；可查看部分成果、补译并从本地历史恢复。此功能需要阅读器提供相应的结构提取能力。
-
-默认「精简」翻译正文、图表说明和学术脚注，出版信息与参考文献保留原文；「完整」翻译所有可译文字。界面字号改为 80%–200% 滑块，支持 1% 微调与恢复默认。完成内容逐步显示；部分失败后仍可阅读、导出已有成果，点击「补译未完成部分」复用已完成片段。公式、表格和复杂版面仍需对照原文核实。只有此功能需要准备版面解析引擎。
-
-### [从参考文献继续追踪证据](docs/usage-guide.md#references)
-
-「解析」同时提取当前 PDF 的参考文献，在「文献解析 → 论文详情 → 参考文献」核对来源、验证 DOI，再选择核对后的候选导入 Zotero；「已选首条」表示无精确匹配时的首条候选，须特别核查。原始顺序、编号与重复项保留，无法确认的内容继续展示；导入按同库 DOI 去重，仅保存元数据与链接，不自动下载 PDF。
-
-阅读器空间不足时，「对照翻译」保留图标入口，简阅及提问、解析、引用等操作收在「•••」阅读操作菜单内；点击 Jadense 图标直接打开工作台。若收起 Zotero 原生侧栏，插件侧栏也会收起；需要时可再次点击阅读操作打开插件侧栏。
-
-### [看图表时，把论文背景一起带入问题](docs/usage-guide.md#figures)
-
-点击自动识别的图片，或按 `Ctrl+Alt+S`（macOS：`⌘+Alt+S`）框选 PDF 区域，选择开启新对话或追加到当前对话。新对话会关联当前文献及可提取的 PDF 正文；正文超出模型容量时，默认只发送与问题相关的原文片段，不额外概括全文。也可在对话中上传、粘贴或拖入 PNG/JPEG 图片；图片随对话保存在本机，重开后可继续查看和追问。
-
-图片解读需使用支持图片输入的模型；自动识图需要 Zotero 10.0.1+ 的兼容 PDF 阅读器。无法自动识别时，可在支持原生裁图的 PDF 阅读器中手动框选。截图与翻译快捷键均可在设置中修改。
-
-<a id="continue-research"></a>
-
-## 读完几篇论文，接着做研究
-
-<a id="jadense-introduction"></a>
-
-### 认识攻玉学术
-
-[![攻玉学术官网暗色主题首页首屏](docs/images/jadense-home-dark.png)](https://jadense.cn/)
-
-[攻玉学术](https://jadense.cn/)官网暗色主题实拍，点击图片进入主应用官网。
-
-读到这里，问题可能已经从「这篇论文讲了什么」，变成「这些论文的方法有什么不同，我的课题还缺什么证据？」。
-
-**攻玉学术**可以承接这一阶段：把相关文献组织到研究项目中，围绕同一个问题持续对话，让阅读所得成为比较方法、整理证据和规划下一步的材料。
-
-<a id="research-project"></a>
-
-### 把阅读所得带入研究项目
-
-1. 在 Zotero 选中与课题相关的文献，进入插件「攻玉学术 → 文献同步」。
-2. 选择攻玉收藏夹及是否包含 PDF，上传所选文献。
-3. 在攻玉网页端打开或创建一个项目，点击「添加上下文」，从个人收藏夹选择这些文献，再在项目中开始对话。
-
-例如，可以带着这组资料提出一个具体任务：
-
-> 请根据提供的文献，比较研究对象、方法和主要证据，区分作者结论与推断，列出仍需补充检索的问题，并拟一份综述提纲。资料不足的地方请明确标出。
-
-上传是 **Zotero → 攻玉的单向操作**，PDF 由你选择是否包含，元数据与 PDF 分别报告结果。插件的对话、笔记和批注不会随文献自动同步到网页端。仅需 Zotero 内的阅读辅助时，可以继续独立使用 BYOK。
-
-[在攻玉学术继续研究](https://jadense.cn/) · [了解项目与资料的使用方式](https://jadense.cn/docs/research-resources)
-
-## 常见问题
-
-更多关于 BYOK 地址、鉴权失败、模型选择、扫描件、商用与赞助的问题，见[完整 FAQ](docs/faq.md)。
-
-### 必须注册吗？是否免费？
-
-使用 BYOK 无需攻玉账号；插件免费下载，允许个人非商业自用、学习与研究，不要求赞助。商业用途须另行取得书面授权。第三方模型费用由对应服务商收取，攻玉服务按账号权限、订阅与积分规则提供。
-
-攻玉受限模型会标注「需升级」和所需档位。遇到限制时，可更换可用模型或升级订阅；充值积分不会解锁受限模型。旧插件令牌缺少积分权限时，账号卡片会提示更新令牌，其他已获授权功能仍可使用。
-
-### 数据与凭据
-
-以下描述的是 **Zotero 插件**的数据路径。
+## 数据去向
 
 | 操作 | 数据去向 |
 | --- | --- |
-| 保存设置、对话、图片附件、翻译和解析历史 | 本机 Zotero profile；API Key 和攻玉令牌也保存在此处，请勿公开分享 profile |
-| 云 OCR | 确认上传及费用后，将相应 PDF 或页面图片直接发送到所选服务；凭证使用 Zotero 登录管理器，无法持久化时仅当前会话保存 |
-| BYOK 模型请求 | 插件直接发送给所选 Provider，包含请求所需的文字、文献上下文及图片；API Key 用于该 Provider 认证 |
-| 参考文献识别、核验与导入 | 不确定片段可交给所选解析模型；DOI/书目信息通过 Zotero 检索与 Crossref 核验，精确匹配或标记「已选首条」的候选经用户核对后导入本机资料库 |
-| 攻玉 AI 功能 | 攻玉接收临时请求及所需上下文，使用插件令牌鉴权，并接收插件版本和功能类型供问题定位；服务端按其规则处理请求、计费和运行记录 |
-| 文献同步 | 主动上传所选文献元数据，仅在选择包含 PDF 时上传本地 PDF |
-| 插件自动更新 | Zotero 请求攻玉官网的更新清单及安装包 |
+| 设置、对话、图片附件、翻译与解析历史、快速综述记录 | 本机 Zotero profile；API Key 与攻玉令牌也存此处，请勿公开分享 profile |
+| 收藏夹快速解析 | 题录、摘要、抽到的链接文本、附录一级标题、版面统计标题与计数发送给所选模型；**PDF 正文不发送**，扫描过程不打开任何链接 |
+| 单篇按需深读 | 显式确认后发送有界正文摘录（≤1200 字），单独一次计费请求 |
+| BYOK 模型请求 | 插件直连所配置的 Provider，不经中转 |
+| 全文翻译 / 参考文献提取 | 默认读 PDF 文字层；启用 OCR 后，提取正文发送至所选翻译服务 |
+| 攻玉 AI 功能 | 攻玉接收临时请求与所需上下文，用插件令牌鉴权 |
+| 插件自动更新 | Zotero 请求攻玉官方更新清单及安装包 |
 
-本地保存历史不等于离线运行。关联 PDF 的可提取正文可成为模型上下文，带图片的后续追问可再次发送最近一张可读取图片。插件对话不会创建攻玉网页端的持久对话；已配置攻玉连接时，账号卡片等功能仍可独立请求攻玉，BYOK 不会关闭这些请求或自动更新。凭据与安全反馈说明见 [SECURITY.md](SECURITY.md)。
+本地保存历史不等于离线运行。凭据与安全说明见 [SECURITY.md](SECURITY.md)。
 
-### 支持哪些版本？有哪些阅读限制？
+## 已知限制
 
-Manifest 声明兼容 Zotero **8.0 至 10.0.\***。部分旧截图来自 **Windows 11 / Zotero 10.0.2** 与 0.4.4 本地构建；0.6.9 简阅截图来自 Windows 11 / Zotero 10.0.3 隔离环境，均使用合成数据与模拟服务。正式 [v0.6.10](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.10) 的草稿原包在 Windows 11 / Zotero 10.0.3 通过三次冷启动、简阅、引擎存储与 BYOK 思考档位专项及 0.6.9 原位升级验收；macOS、Linux、Zotero 8/9、Zotero 10.0.4 和真实付费 Provider 尚未实测。
+- 快速解析的判断依据只有题录与摘要（加上本机扫出的链接、附录标题、版面统计）。摘要未提及的内容一律记 `unknown`，模型不得按常识或期刊习惯推断，也不得编造仓库名、网址或许可证——但对「证据强度」这类维度，材料本身就有限，请结合原文核对。
+- 版面统计与小节识别按中英日混排的会议／期刊／综述 PDF 逐篇校准过，遇到新的排版仍可能漏检或多检；漏检会写在回执里，不会静默。
+- 深读、重发、清理都有确认环节，取消即不发、不删。
+- 未实测：macOS、Linux、Zotero 8／9，以及真实付费 Provider 的计费行为。
+- 本 fork 的 Issue 仅用于自用记录，不承诺响应第三方反馈。
 
-全文翻译默认提取 PDF 文字层；扫描页可启用 OCR，提取后的正文会发送至你选择的翻译服务。首次全文翻译会提示费用与稳定性，取消不会发起请求。解析结果受文本可提取范围和模型输出影响，请结合原文核对；中断或部分批注写入失败时会尽可能保留已生成笔记并提示结果。每条消息可新附一张图片，旧版本未保存的图片无法自动恢复。
+## 许可与致谢
 
-<a id="upgrade"></a>
+代码遵循 [Jadense Non-Commercial License 1.0](LICENSE)：允许个人非商业自用与免费再分发，条件是保留声明、标注改动、下游同条件；不授予商标与官方身份，收费代装或托管视为商业使用。
 
-### 从旧版怎样升级？
+插件本体与全部上游设计来自 [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero) 与[攻玉学术](https://jadense.cn/)。本 fork 只做删广告、加自用功能、修检测漏检这三类改动，不改变官方的许可意图。
 
-可从同一 `.cn` 插件身份的旧 GitHub 版本安装升级到正式版 0.6.12；已在 Windows 11 / Zotero 10.0.6 验证 0.6.11 原位升级。已有设置与本地历史保留，旧译文不会自动重译。首次运行 0.6.10 会一次性把攻玉对话模型设为 `qwen-3.8-flash`；BYOK 对话目的地不变，此后手动选择不再被覆盖。
+## English summary
 
-安装过使用 `jadense-in-zotero@jadense.com` 身份的版本（包括官网 0.3.2）时，**先禁用旧 Jadense 插件，再从文件手动安装最新正式版**。新版身份为 `jadense-in-zotero@jadense.cn`，不同身份不会自动覆盖升级，请勿同时启用。
+This is a **personal fork** of [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero), based on the official `v0.6.13`. The upstream README's third-party API reseller promotion, donation pages, star-history chart and web-app upsell sections have been removed; nothing was added in their place — no analytics, no redirect endpoints.
 
-新版沿用原有偏好命名空间与历史保存位置，请勿删除 Zotero profile。除上述一次性的攻玉对话模型切换外，已保存的模型、路由与 BYOK 选择会保留。插件仍读取[攻玉官方更新源](https://jadense.cn/plugins/zotero/jadense-in-zotero/updates.json)，GitHub 发布不会自动修改官网更新清单。版本差异见 [更新说明](CHANGELOG.md)。
+What this branch adds:
 
-<a id="support"></a>
+- **Collection quick review** (not in official builds): one request over a Zotero collection and its sub-collections produces an overview, per-paper digests, a comparison table, trends and gaps, plus a 0–100 rating per paper on five weighted axes. Material is bibliographic metadata and abstracts only.
+- **Local forensics that a model cannot fake**: whole-PDF text-layer extraction merged with PDF hyperlink annotations (572 of 610 link annotations in a local corpus never appear in the text layer), top-level appendix titles, layout counts (sections, figures, tables, references, ablation／baseline／human-evaluation hits) and clickable section-to-page jumps. Only titles and counts leave the machine.
+- **A hard rule for "code released"**: only a repository URL or an explicit open-source statement counts; project pages, landing pages and "will be released" promises do not, and an unsupported `yes` is downgraded on the client.
+- **Bounded per-paper deep read**, one separately billed request, made only after a dialog states exactly how many characters from which sections on which pages will be sent.
+- **Cache reclamation** for bilingual PDF translation: two generations of published output, orphan cleanup after two confirmations a minute apart, and named auto-save that never overwrites the source PDF.
+- **Scan failures never masquerade as "found nothing"**: each paper carries a `scanOutcome`, so an unreadable attachment list says "attachment unavailable (retried next run)" instead of "read 0 pages, no links".
+- **Malformed JSON recovery** in three stages instead of losing the whole review to one unescaped quote.
 
-## 如何支持我们
+Deliberately unchanged: the BYOK non-idempotence fence (an unconfirmed execution that already produced output is never resent automatically — only once, after you check with the provider and explicitly authorise it), error projection limited to code／HTTP status／class name, one dispatch per batch review, the same billing destination as "paper analysis", and the official plugin ID and update URL. Package versions are four-segment (`0.6.13.13`); fork releases map as `v0.(10 + x)`, so `v0.23` is `0.6.13.13`. Because the plugin ID and update feed stay official, an official release newer than this branch will replace these builds through Zotero's automatic update — turn automatic update off if you want to stay on the fork.
 
-如果插件帮助你更顺畅地阅读论文，欢迎 Star、分享、反馈问题或参与贡献。自愿赞助也能帮助我们持续维护插件和文档。
-
-- 赞助时可在备注中留下希望出现在未来赞助名单中的**昵称与留言**；希望公开时请注明「同意公开」，否则默认匿名。
-- ☕ [Wechat 微信 / Alipay 支付宝](support/README.md)
-
-点击上方链接进入本项目独立赞助页，查看收款码、留言规则与未来名单说明。赞助不是使用门槛，不兑换订阅、积分或商业授权。
-
-## Star 增长趋势
-
-<a href="https://www.star-history.com/#jadense-ai/jadense-in-zotero&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=jadense-ai/jadense-in-zotero&amp;type=Date&amp;theme=dark">
-    <img alt="Jadense in Zotero Star 增长趋势图" src="https://api.star-history.com/svg?repos=jadense-ai/jadense-in-zotero&amp;type=Date">
-  </picture>
-</a>
-
-## 参与和反馈
-
-欢迎通过 [Issues](https://github.com/jadense-ai/jadense-in-zotero/issues) 反馈使用问题或提出建议，附上插件版本、Zotero 版本、系统及可复现步骤，并去除账号信息和私人资料。若插件帮到了你的阅读，也欢迎 Star 或分享给同样使用 Zotero 的同学和同事。
-
-### 独立开发与验证
-
-插件可独立开发，无需主应用源码、数据库或 `.env`。环境准备、构建与隔离 Zotero 验证见 [贡献与 GitHub 发布指南](CONTRIBUTING.md#开发与本机验证)，产品设计见 [DESIGN.md](DESIGN.md)。
-
-### 同步与发布
-
-上游同步、PR 检查、草稿发布和制品核验由[贡献指南](CONTRIBUTING.md)统一说明。
-
-## 许可证
-
-当前代码采用 [Jadense 非商业使用许可证 1.0](LICENSE)：允许个人非商业自用、学习和研究，以及遵守许可的免费修改与分发；禁止商业使用，商业授权需另行书面取得。赞助不构成商业授权。
-
-本项目属于源码公开项目，不再使用 MIT 或 OSI 开源许可来描述当前整体许可；[OSI 开源定义](https://opensource.org/osd)不允许限制商业用途。新许可不追溯撤销历史 MIT 版本的既有授权，也不改变第三方组件的原有许可，原声明见[第三方与历史许可声明](THIRD_PARTY_NOTICES.md)。已发布版本的 CHANGELOG 保留历史事实。本仓库不包含攻玉主应用或服务端，也不授予官方身份或商标使用权。
+Licence is unchanged: Jadense Non-Commercial License 1.0 (personal non-commercial use, free redistribution with attribution, changes documented, downstream inherits the same terms). See [CHANGELOG.md](CHANGELOG.md) for the per-round diff against official.
