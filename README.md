@@ -137,7 +137,7 @@ git merge upstream/main           # 冲突集中在 CHANGELOG.md、README 与 do
 
 ## English summary
 
-This is a **personal fork** of [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero), based on the official `v0.6.13`. The upstream README's third-party API reseller promotion, donation pages, star-history chart and web-app upsell sections have been removed; nothing was added in their place — no analytics, no redirect endpoints.
+This is a **personal fork** of [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero), based on the official `v0.6.14`. The upstream README's third-party API reseller promotion, donation pages, star-history chart and web-app upsell sections have been removed; nothing was added in their place — no analytics, no redirect endpoints.
 
 What this branch adds:
 
@@ -145,10 +145,10 @@ What this branch adds:
 - **Local forensics that a model cannot fake**: whole-PDF text-layer extraction merged with PDF hyperlink annotations (572 of 610 link annotations in a local corpus never appear in the text layer), top-level appendix titles, layout counts (sections, figures, tables, references, ablation／baseline／human-evaluation hits) and clickable section-to-page jumps. Only titles and counts leave the machine.
 - **A hard rule for "code released"**: only a repository URL or an explicit open-source statement counts; project pages, landing pages and "will be released" promises do not, and an unsupported `yes` is downgraded on the client.
 - **Bounded per-paper deep read**, one separately billed request, made only after a dialog states exactly how many characters from which sections on which pages will be sent.
-- **Cache reclamation** for bilingual PDF translation: two generations of published output, orphan cleanup after two confirmations a minute apart, and named auto-save that never overwrites the source PDF.
+- **Cache reclamation** for bilingual PDF translation: two generations of published output, orphan cleanup after two confirmations a minute apart, and named auto-save that resolves the literature title at save time, never overwrites the source PDF, and offers a folder picker when the remembered folder has gone.
 - **Scan failures never masquerade as "found nothing"**: each paper carries a `scanOutcome`, so an unreadable attachment list says "attachment unavailable (retried next run)" instead of "read 0 pages, no links".
 - **Malformed JSON recovery** in three stages instead of losing the whole review to one unescaped quote.
 
-Deliberately unchanged: the BYOK non-idempotence fence (an unconfirmed execution that already produced output is never resent automatically — only once, after you check with the provider and explicitly authorise it), error projection limited to code／HTTP status／class name, one dispatch per batch review, the same billing destination as "paper analysis", and the official plugin ID and update URL. Package versions are four-segment (`0.6.13.13`); fork releases map as `v0.(10 + x)`, so `v0.23` is `0.6.13.13`. Because the plugin ID and update feed stay official, an official release newer than this branch will replace these builds through Zotero's automatic update — turn automatic update off if you want to stay on the fork.
+Deliberately unchanged: the BYOK non-idempotence fence (an unconfirmed execution that already produced output is never resent automatically — only once, after you check with the provider and explicitly authorise it), error projection limited to code／HTTP status／class name, one dispatch per batch review, the same billing destination as "paper analysis", and the official plugin ID and update URL. Package versions are four-segment (`0.6.14.1`); fork releases map as `v0.(10 + x)`, so `v0.23` is `0.6.13.13` and `v0.24` is `0.6.14.1`. Because the plugin ID and update feed stay official, an official release newer than this branch will replace these builds through Zotero's automatic update — turn automatic update off if you want to stay on the fork.
 
 Licence is unchanged: Jadense Non-Commercial License 1.0 (personal non-commercial use, free redistribution with attribution, changes documented, downstream inherits the same terms). See [CHANGELOG.md](CHANGELOG.md) for the per-round diff against official.
