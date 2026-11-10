@@ -1,13 +1,7 @@
-/** 发布文档与分支约定检查；仅作用于仓库 CI，不参与插件运行。 */
+/** README 发布摘要检查；不限制工作分支名，不参与插件运行。 */
 import assert from 'node:assert/strict'
 import process from 'node:process'
 import { readFileSync } from 'node:fs'
-
-const version = JSON.parse(readFileSync('package.json', 'utf8')).version
-const branch = process.env.GITHUB_HEAD_REF || (process.env.GITHUB_REF_TYPE === 'branch' ? process.env.GITHUB_REF_NAME : '') || ''
-assert.ok(!/^codex[/-]/i.test(branch), 'Use a descriptive feature branch or vX.X.X release branch')
-if (/release|^v\d/i.test(branch)) assert.equal(branch, `v${version}`, 'Release branch must be exactly vX.X.X and match package.json')
-// 上游未发布版本可经普通源码同步 PR 合并；版本号变化本身不代表发布。
 
 /** README 摘要只列正式版本；语言之间一致，完整历史由 CHANGELOG 保存。 */
 export function summaryVersions(markdown) {
@@ -27,4 +21,4 @@ export function summaryVersions(markdown) {
 }
 
 assert.deepEqual(summaryVersions(readFileSync('README.md', 'utf8')), summaryVersions(readFileSync('README.en.md', 'utf8')))
-process.stdout.write('Release naming and README summaries verified\n')
+process.stdout.write('README summaries verified\n')

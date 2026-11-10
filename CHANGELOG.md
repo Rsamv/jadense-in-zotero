@@ -1,5 +1,27 @@
 # 更新说明 / Changelog
 
+## 0.6.14.1 — 2026-11-10
+
+- 基线升级到官方 **v0.6.14**（证据溯源、来源列表、三步互动入门与统一离线安装帮助全部并入），本地收藏夹快速解析、本机证据、深读与对照翻译增强保持不变。
+- **修好译文自动保存的静默失败**：记住的保存目录被移动或删除后，以前只是悄悄不写入。现在完成翻译时会提示「自动保存目录不存在」，点「选择保存目录」选定后会把这一篇立即补存，并记住新目录；同一缺失目录每次会话只提示一次。
+- **设置页补回自动保存入口**：对照翻译设置新增「自动保存对照译文」开关、当前目录、「选择保存目录」与「清除保存目录」，目录不可用时直接写明「保存目录不存在，请重新选择」。
+- **命名不再受任务里的占位名影响**：手动保存与自动保存都在保存时重新解析文献标题，旧版或官方版创建、`source.title` 仍是 `PDF` 的任务也会按文章标题命名；冒号、斜杠等字符仍会清洗，同名文件继续追加序号，不覆盖原 PDF。
+- Auto-save no longer fails silently when the remembered folder has been moved or deleted: finishing a translation now shows a "folder not found" notice whose **Choose folder** action saves that translation immediately and remembers the new folder. The notice is shown once per missing folder per session.
+- **The auto-save controls are back in settings**: the bilingual translation page now has an Auto-save toggle, the current folder, Choose folder and Clear folder, and it states when the remembered folder no longer exists.
+- **Naming resolves the literature title at save time**, so tasks created by older or official builds whose `source.title` is still the `PDF` placeholder are named after the paper too. Unsafe characters are still cleaned, existing files are still numbered instead of overwritten, and the original PDF is never touched.
+- Adds regression coverage for title-based auto-save naming, placeholder task titles, missing save folders and saving an explicitly chosen folder.
+
+## 0.6.14 — 2026-11-04
+
+- 新增默认关闭的「证据溯源」：开启后，AI 回复可显示行内数字引用，预览原句并跳转 PDF 对应文段；同一原文重复引用沿用编号。
+- 回复操作栏新增按需展开的来源列表，区分不同论文与原文片段；改善窄侧栏、跨 PDF 定位和浮层关闭，移除旧阅读范围与页码列表。
+- 新增三步互动入门教学：选择攻玉或 BYOK、主动发送「你好」、按需准备文档引擎；进度可继续，老用户不会被升级强制打断。
+- 入门教学与 OCR／PDF 引擎设置提供统一离线安装帮助，包含下载渠道、两个引擎分别导入及就绪检查说明。
+- Add opt-in evidence tracing: inline citation numbers preview original passages and navigate to the corresponding PDF text. Repeated citations to the same passage reuse their number.
+- Add an on-demand source list in reply actions, distinguishing papers and passages. Improve narrow sidebars, navigation across PDFs and popover dismissal; remove the old reading-coverage and page lists.
+- Add resumable, three-step onboarding: choose Jadense or BYOK, explicitly send Hello, and optionally prepare document engines. Existing users are not forced through the guide after upgrading.
+- Share offline installation help across onboarding and OCR/PDF engine settings, covering download channels, separate engine imports and readiness checks.
+
 ## 0.6.13.13 — 2026-10-27
 
 - 卡片中段收进一个可折叠的**「本机证据」框**：作者行之下、代码／数据徽章之上，附件账目、版面统计、正文一级小节、本地链接与附录原本是四五行平铺，现在同属一个独立描边的框，标题栏右侧写摘要（`附件 13 页 · 链接 2 条 · 附录 3 部分 · 正文小节 7 节`），点「收起／展开」折叠内容。默认展开，与下方模型评价框分成两块，谁读的、谁判的一眼可分。折叠状态只在本窗口内记住，换一批综述即复位；那一篇没有任何本机证据时整块不画。
@@ -175,7 +197,7 @@
 - Failure notices gain a typed prefix (e.g. [Upstream service error · 503]) built only from error code, HTTP status and class name, so no provider body or credential can leak.
 - The BYOK billing fence keeps the 0.6.13 behaviour: output-producing or unconfirmed executions are never resent without an explicit user choice. This build changes no BYOK retry or execution-state rules and adds tests that pin that boundary.
 
-## 0.6.13 — Unreleased / 尚未发布
+## 0.6.13 — 2026-10-21
 
 - 文献解析与 PDF 对照翻译保存任务进度；可恢复的暂时故障等待后继续，重启后恢复此前明确运行的任务，用户暂停的任务等待手动继续。已完成的模型结果只补本地保存、批注或 PDF 排版。
 - 解析完成状态不再被抽样说明误标为失败；保留缺页、生成与保存错误，解析详情提供「继续解析」，并区分暂停与等待恢复。

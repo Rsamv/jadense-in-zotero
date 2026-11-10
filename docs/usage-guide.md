@@ -2,6 +2,8 @@
 
 [返回 README](../README.md) · [Zotero 入门](zotero-guide.md) · [FAQ](faq.md)
 
+- [0.6.14.1 自动保存与命名修复](#update-06141)
+- [0.6.14 证据溯源与互动入门](#update-0614)
 - [0.6.13.13 快速解析：本机证据收进可折叠框、正文小节可点跳页](#update-061313)
 - [0.6.13.12 快速解析：本机版面统计、单篇按需深读（有界摘录 + 单独一次派发）](#update-061312)
 - [0.6.13.11 快速解析：代码判定收紧、附录只列一级标题、评价改为百分制、畸形 JSON 不再整篇报废](#update-061311)
@@ -20,6 +22,29 @@
 - [0.6.2 更新提示与阅读入口](#release-062)
 - [0.6.10 引擎存储、BYOK 档位与升级](#update-0610)
 - [0.6.9 简阅、模型与翻译反馈](#simple-reading-069)
+
+<a id="update-06141"></a>
+
+## 0.6.14.1：自动保存与命名修复（2026-11-10）
+
+- **基线升级**：本构建以官方 **v0.6.14** 为基线，并入证据溯源、来源列表与三步互动入门；本地快速解析、本机证据、单篇深读与对照翻译增强保持不变，安装覆盖后设置和本地历史继续沿用。
+- **自动保存不再静默失败**：记住的保存目录被移动或删除后，翻译完成时会提示「自动保存目录不存在」。点「选择保存目录」选定新目录后，这一篇译文会立即补存，后续任务也保存到新目录；同一缺失目录每次会话只提示一次。此前这种情况只会悄悄跳过，看起来就像自动保存没生效。
+- **设置页可以改目录了**：「功能配置 → 对照翻译」新增「自动保存对照译文」开关、当前保存目录、「选择保存目录」与「清除保存目录」。目录不可用时，说明文字会直接写「保存目录不存在，请重新选择」。默认开启；没有选择目录时不会写入任何文件。
+- **命名以保存时的文献标题为准**：手动「保存译文 / 保存对照」和自动保存都会重新解析父条目标题，因此旧版或官方版创建、任务里还存着附件占位名 `PDF` 的文献，也会按文章标题命名。标题里的 `: * ? " < > | / \` 等字符会替换成空格，超过 120 字截断；同名文件继续追加 ` (2)`、` (3)`，不覆盖原 PDF 或已有文件。
+- **旧成果不会自动补存**：升级前已经完成的译文不会因为本版安装而多出一份副本；在阅读器里点「保存对照」即可按标题导出，或重新执行一次对照翻译触发自动保存。
+
+<a id="update-0614"></a>
+## 0.6.14 证据溯源与互动入门 / Evidence tracing and onboarding
+
+在工作台或 PDF 阅读器的输入区开启「证据溯源」，关联可提取正文的 PDF 后提问。默认关闭，只影响后续请求；旧回复不会自动补造引用。行内数字可预览原句并定位 PDF，底部来源入口按需列出文献与原文片段。同一原句重复引用沿用编号，不同论文和段落分别定位；没有准确矩形时按页定位。来源失效只影响该引用，不阻断问答。来源原文不等于结论得到证明，仍需人工核对；普通摘要不能代替原文证据。
+
+从「帮助 → 入门教学」或侧栏底部教学图标打开三步引导，选择攻玉或 BYOK、主动发送「你好」、按需准备 OCR 与 PDF 引擎。进度保存在本机，可继续或跳过；旧用户升级不强制重新教学。发送「你好」可能计费，浏览引导不自动请求模型或安装引擎。离线帮助列出下载渠道，完整套装解压后需要分别导入其中两个引擎 ZIP。
+
+Enable **Evidence tracing** in the workbench or Reader composer and ask about a linked PDF with extractable text. It is off by default and affects future requests only. Inline numbers preview passages and navigate to the original PDF; reply actions open the source list on demand. Repeated citations reuse their number, and different papers/passages retain separate navigation targets. Missing coordinates fall back to page navigation. Unavailable references do not block chat, and a cited passage is not proof that the model's claim is correct.
+
+Open **Help → Getting started** or the tutorial icon at the bottom of the sidebar for resumable onboarding: choose Jadense/BYOK, explicitly send Hello, then optionally prepare document engines. Existing users are not forced to repeat it after upgrading. Sending Hello may incur model charges; browsing the guide does not automatically call a model or install engines. Offline help explains downloading the complete kit and importing its two engine ZIP files separately.
+
+更新保留设置和本地历史。完整离线套装适用 Windows x64；证据溯源开发验证覆盖 Windows / Zotero 10.0.7 的双语、主题、窄侧栏、跨 PDF 定位与历史恢复，其他系统及真实服务的引用遵循性未实测。详见 [v0.6.14 发布说明](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.14)。
 
 <a id="update-061313"></a>
 

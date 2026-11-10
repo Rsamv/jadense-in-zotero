@@ -7,6 +7,8 @@ import { uiText } from './ui-preferences'
 import { readPDFTranslationMode, savePDFTranslationMode, pdfModeLabel, type PDFTranslationMode } from './pdf-translation-policy'
 import { wireTranslationSpeedSettings } from './translation-speed-settings'
 import { createJdxSelect } from './custom-select'
+import { AUTO_SAVE_TRANSLATED_PDF_PREF, TRANSLATED_PDF_DIRECTORY_PREF, forgetTranslatedPDFDirectory, readAutoSaveTranslatedPDF, readTranslatedPDFDirectory, saveAutoSaveTranslatedPDF, saveTranslatedPDFDirectory } from './pdf-translation-autosave'
+import { appendOnboardingEngineHelp } from './onboarding-engine-help'
 
 export function wirePDFEngineSettings(host: ZoteroLike, root: HTMLElement | null) {
   if (!root) return () => {}
@@ -39,6 +41,7 @@ export function wirePDFEngineSettings(host: ZoteroLike, root: HTMLElement | null
   const location = element('p'); location.className = 'jdx-manager-settings-note jdx-pref-card-note'; location.style.overflowWrap = 'anywhere'
   try { location.textContent = uiText('安装目录：', 'Install directory: ') + pdfRuntimeRoot(host) } catch { /* 不影响设置展示。 */ }
   actions.append(prepare, repair, offline, check, cancel); controls.append(actions, help, location); row.append(description, controls); root.append(title, row)
+  const offlineHelp = appendOnboardingEngineHelp(doc, host, controls); offlineHelp.element.hidden = true
   const stopStorage = wireEngineStorageSettings(host, root, 'pdf', {
     busy: () => pdfTranslationJobs(host).storageBusyReason(),
     committed: target => { location.textContent = uiText('安装目录：', 'Install directory: ') + target },
@@ -83,12 +86,17 @@ export function wirePDFEngineSettings(host: ZoteroLike, root: HTMLElement | null
       }
       if (operation === 'check') await pdfTranslationJobs(host).checkEngine(controller.signal, progress)
       else await pdfTranslationJobs(host).prepare(controller.signal, progress, operation === 'repair', archive)
-      if (!disposed) status.textContent = uiText('PDF 翻译引擎已就绪', 'PDF translation engine ready')
-    } catch (error) { if (!disposed) status.textContent = controller.signal.aborted ? uiText('已取消，已下载内容保留；再次准备可继续。', 'Cancelled; downloaded bytes retained. Prepare again to continue.') : error instanceof Error ? error.message : String(error) } finally { controller = undefined; for (const button of [prepare, repair, check, offline]) button.disabled = false; cancel.hidden = true }
+      if (!disposed) { status.textContent = uiText('PDF 翻译引擎已就绪', 'PDF translation engine ready'); offlineHelp.element.hidden = true }
+    } catch (error) {
+      if (!disposed) {
+        status.textContent = controller.signal.aborted ? uiText('已取消，已下载内容保留；再次准备可继续。', 'Cancelled; downloaded bytes retained. Prepare again to continue.') : error instanceof Error ? error.message : String(error)
+        if (!controller.signal.aborted) offlineHelp.element.hidden = false
+      }
+    } finally { controller = undefined; for (const button of [prepare, repair, check, offline]) button.disabled = false; cancel.hidden = true }
   }
   prepare.addEventListener('click', () => { void run('prepare') }); repair.addEventListener('click', () => { void run('repair') }); check.addEventListener('click', () => { void run('check') }); offline.addEventListener('click', () => { void run('import') }); cancel.addEventListener('click', () => controller?.abort())
   void Promise.resolve().then(() => pdfPlatform().IOUtils.exists(pdfPlatform().PathUtils.join(pdfRuntimeRoot(host), PDF_ENGINE))).then(ready => { if (!disposed && !controller) status.textContent = ready ? uiText('已有引擎安装记录，可点击检测确认。', 'An installation was recorded. Check to verify it.') : uiText('首次使用时准备，也可导入离线包或检测手动安装。', 'Prepare on first use, import an offline package, or check a manual installation.') }).catch(() => {})
-  return () => { disposed = true; controller?.abort(); stopStorage(); title.remove(); row.remove() }
+  return () => { disposed = true; controller?.abort(); stopStorage(); offlineHelp.dispose(); title.remove(); row.remove() }
 }
 
 /** 功能偏好复用运行时现有键；不改变历史任务身份，范围用于新任务，同步滚动用于下次打开。 */
@@ -114,21 +122,62 @@ export function wirePDFTranslationSettings(host: ZoteroLike, root: HTMLElement |
   linkedLabel.append(linked, make('span', uiText('同步滚动', 'Synchronized scrolling')))
   const linkedNote = make('p', uiText('下次打开对照阅读时生效；阅读器中仍可随时切换。', 'Applies when opening the next bilingual view; you can also toggle it in the reader.')); linkedNote.className = note.className
   linkedDescription.append(make('h3', uiText('对照阅读', 'Bilingual reading')), linkedNote); linkedRow.append(linkedDescription, linkedLabel)
+  const autoSaveRow = make('div'); autoSaveRow.className = 'jdx-feature-model-row'
+  const autoSaveDescription = make('div'), autoSaveControls = make('div'); autoSaveControls.className = 'jdx-settings-controls'
+  const autoSaveNote = make('p', uiText('翻译完成后自动保存一份对照 PDF，按文献标题命名，不覆盖已有文件。', 'After translation, save a bilingual PDF automatically, named after the paper and without overwriting existing files.')); autoSaveNote.className = note.className
+  const folderLine = make('p'); folderLine.className = note.className; folderLine.dataset.pdfAutoSaveDirectory = ''
+  const autoSaveLabel = make('label'), autoSave = make('input'); autoSaveLabel.className = 'jdx-manager-checkbox jdx-pref-checkbox'; autoSave.type = 'checkbox'; autoSave.dataset.pdfAutoSave = ''
+  autoSaveLabel.append(autoSave, make('span', uiText('自动保存', 'Auto-save')))
+  const folderActions = make('div'); folderActions.className = 'jdx-manager-actions'
+  const chooseFolder = make('button', uiText('选择保存目录', 'Choose folder')), clearFolder = make('button', uiText('清除保存目录', 'Clear folder'))
+  for (const button of [chooseFolder, clearFolder]) { button.type = 'button'; button.className = 'jdx-button' }
+  chooseFolder.dataset.pdfAutoSaveChoose = ''; clearFolder.dataset.pdfAutoSaveClear = ''
+  folderActions.append(chooseFolder, clearFolder); autoSaveControls.append(autoSaveLabel, folderActions)
+  autoSaveDescription.append(make('h3', uiText('自动保存对照译文', 'Auto-save bilingual PDF')), autoSaveNote, folderLine)
+  autoSaveRow.append(autoSaveDescription, autoSaveControls)
   const dependencyRow = make('div'); dependencyRow.className = 'jdx-feature-model-row'
   const button = make('button', uiText('配置版面解析引擎', 'Configure layout engine')); button.type = 'button'; button.className = 'jdx-button'; button.addEventListener('click', showDependencies)
   const actions = make('div'); actions.className = 'jdx-manager-actions'; actions.append(button)
   dependencyRow.append(make('h3', uiText('外置依赖', 'External dependencies')), actions)
-  body.append(row, linkedRow, dependencyRow); root.append(body)
+  body.append(row, linkedRow, autoSaveRow, dependencyRow); root.append(body)
   const key = 'extensions.jadenseInZotero.pdfLinkedScroll'
-  const sync = () => { select.setOptions((['concise', 'full'] as const).map(value => ({ value, label: pdfModeLabel(value) })), readPDFTranslationMode(host)); linked.checked = host.Prefs?.get(key, true) !== false }
+  let disposed = false
+  const sync = () => {
+    select.setOptions((['concise', 'full'] as const).map(value => ({ value, label: pdfModeLabel(value) })), readPDFTranslationMode(host))
+    linked.checked = host.Prefs?.get(key, true) !== false
+    autoSave.checked = readAutoSaveTranslatedPDF(host)
+    const directory = readTranslatedPDFDirectory(host)
+    folderLine.textContent = directory ? uiText(`保存目录：${directory}`, `Folder: ${directory}`) : uiText('尚未选择保存目录；翻译完成后不会自动保存。', 'No folder selected; finished PDFs will not be auto-saved.')
+    if (directory) void pdfPlatform().IOUtils.exists(directory).then(exists => {
+      if (!disposed && readTranslatedPDFDirectory(host) === directory) folderLine.textContent = exists
+        ? uiText(`保存目录：${directory}`, `Folder: ${directory}`)
+        : uiText(`保存目录不存在，请重新选择：${directory}`, `Folder not found; choose it again: ${directory}`)
+    }).catch(() => {})
+  }
   const save = (work: () => void) => { try { work(); status.textContent = '' } catch { status.textContent = uiText('设置保存失败，请重试。', 'Could not save settings. Please retry.') } sync() }
   select.onChange(value => save(() => savePDFTranslationMode(host, value as PDFTranslationMode)))
   linked.addEventListener('change', () => save(() => host.Prefs?.set(key, linked.checked, true)))
+  autoSave.addEventListener('change', () => save(() => saveAutoSaveTranslatedPDF(host, autoSave.checked)))
+  clearFolder.addEventListener('click', () => save(() => forgetTranslatedPDFDirectory(host)))
+  chooseFolder.addEventListener('click', () => {
+    void (async () => {
+      try {
+        const platform = globalThis as unknown as { ChromeUtils: { importESModule(url: string): { FilePicker: new () => { init(win: Window, title: string, mode: number): void; modeGetFolder: number; returnCancel: number; show(): Promise<number>; file: string } } } }
+        const { FilePicker } = platform.ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs')
+        const picker = new FilePicker()
+        picker.init(host.getMainWindow?.() ?? doc.defaultView!, uiText('选择译文自动保存目录', 'Choose auto-save folder for translated PDFs'), picker.modeGetFolder)
+        if (await picker.show() === picker.returnCancel || !picker.file) return
+        saveTranslatedPDFDirectory(host, picker.file)
+        status.textContent = uiText('已记住保存目录。', 'Save folder remembered.')
+        sync()
+      } catch { status.textContent = uiText('无法打开目录选择器，请重试。', 'Could not open the folder picker. Please retry.') }
+    })()
+  })
   const observers: unknown[] = []
-  for (const pref of [key, 'extensions.jadenseInZotero.pdfTranslationMode']) {
+  for (const pref of [key, 'extensions.jadenseInZotero.pdfTranslationMode', AUTO_SAVE_TRANSLATED_PDF_PREF, TRANSLATED_PDF_DIRECTORY_PREF]) {
     try { const id = host.Prefs?.registerObserver?.(pref, sync, true); if (id !== undefined) observers.push(id) } catch { /* 跨窗同步不可用不阻断设置。 */ }
   }
   const stopSpeed = wireTranslationSpeedSettings(host, body)
   sync()
-  return () => { stopSpeed(); select.destroy(); observers.forEach(id => host.Prefs?.unregisterObserver?.(id)); body.remove() }
+  return () => { disposed = true; stopSpeed(); select.destroy(); observers.forEach(id => host.Prefs?.unregisterObserver?.(id)); body.remove() }
 }

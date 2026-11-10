@@ -1,162 +1,74 @@
-# 贡献与 GitHub 发布
+# 贡献与维护
 
-本仓库可以独立开发和构建，无需私有主应用、数据库、账号令牌或 `.env`。GitHub PR 与 Release 按本文执行；官网发布和自动更新不属于此流程。
+本仓库可独立构建基础版，不需要私有主应用、数据库或 `.env`。按改动影响选择检查，不把普通维护当作正式发行。
 
-## 许可与贡献
+## 日常修改
 
-当前项目采用 [Jadense 非商业使用许可证 1.0](LICENSE)，允许非商业自用与符合许可的修改、分发；商业使用需另行书面授权。提交贡献前请确认你有权提供相关内容，并在 PR 中明确同意新增贡献按本项目当前许可分发；保留引入内容的原始许可，不将第三方代码直接改标为本项目许可。历史 MIT 授权不追溯撤销。
+| 改动 | 足够的验证 |
+| --- | --- |
+| README、文案、图片、链接 | 检查内容、相对路径和必要的显示效果；无需安装依赖、测试或构建 |
+| 插件代码 | 相关测试或静态检查；影响宿主交互时验证对应 Zotero 场景 |
+| 依赖、打包、更新或正式发行 | 检查构建、兼容性及相关发行校验 |
 
-README 与 docs 用户指南由本仓库独立维护；LICENSE、package.json 与 THIRD_PARTY_NOTICES.md 和上游保持一致。发布新许可前需核对新增贡献的授权。README 的微信/支付宝入口统一链接到 `support/README.md`，由独立赞助页展示维护者提供的收款码。更新收款码时只裁剪外框与外围文字，保留码内图案，不重绘二维码；发布前检查链接、平台与收款人对应关系。
+小改动无需任务记录、ADR、全套截图或全量验收。只更新受影响的指南和语言版本；单纯换图不要求更新 CHANGELOG、版本号或 Release。沿用已有品牌素材和组件。
 
-## 开发与本机验证
+维护者可以直接提交小改动到 `main`；代码改动和外部贡献建议通过 PR。PR 简述修改和验证即可，不要求固定模板或额外批准。`main` 不强制 PR 或必过 CI，仍禁止强推和删除，并保留线性历史。不要覆盖他人工作。
 
-使用 `.node-version` 中的 Node 版本和 `packageManager` 中的 pnpm 版本：
+提交前查看差异，只提交本次文件。不提交凭据、真实用户数据、profile、日志、`build/`、`release/` 或生成的 `manifest.json`。保留第三方许可；贡献按本项目 [当前许可证](LICENSE) 分发。安全问题见 [SECURITY.md](SECURITY.md)。
 
-Windows 初次克隆建议使用 `git -c core.autocrlf=false clone https://github.com/jadense-ai/jadense-in-zotero.git` 保留仓库的 LF 换行；部分现有源码匹配测试依赖 LF。无需修改全局 Git 配置。
+## 开发与源码同步
+
+Node 和 pnpm 版本以 `.node-version`、`package.json` 为准。按需使用：
 
 ```powershell
 pnpm install --frozen-lockfile
 pnpm test
-node --test .github/scripts/release.test.mjs
 pnpm run lint
 pnpm run build
 ```
 
-`build` 已包含类型检查、XPI 打包和制品校验。运行功能测试位于 `src/`，GitHub 发布边界测试位于 `.github/scripts/`；后者只使用临时 Git 仓库和模拟发布命令。
+`build` 包含类型检查和基础 XPI 制品校验；产物在 `release/zotero/v<版本>/`。需要原生验证时使用 `smoke:installed` 或 `smoke:research`，仅运行与改动有关的场景。声明兼容范围不代表所有平台已实测。
 
-当前固定 Node **24.10.0**、pnpm **10.19.0**。构建产物位于 `release/zotero/v<package.json 版本>/`，包括 `jadense-in-zotero-v<版本>.xpi`、`release-metadata.json` 和 `SHA256SUMS`；`manifest.json`、`build/`、`release/` 均为生成物，不提交。XPI 包含项目许可证和打包依赖的完整许可证声明。
+插件源码在维护者上游开发，通过白名单同步；外部代码贡献合并时回流上游，保留署名并处理冲突。README、用户指南、CHANGELOG、本文和 `.github/` 独立维护，不需要上游同步。不要公开私有模块或覆盖独立贡献。
 
-安装本机 Zotero 后，可运行隔离冒烟；请将路径替换为自己的可执行文件路径：
+## 当前 GitHub 自动化
 
-```powershell
-pnpm run smoke:installed -- 'C:/Program Files/Zotero/zotero.exe' --keep-temp
-pnpm run smoke:research -- 'C:/Program Files/Zotero/zotero.exe' --keep-temp
-pnpm run smoke:research -- 'C:/Program Files/Zotero/zotero.exe' --appearance-language en-US --screenshots
-pnpm run smoke:research -- 'C:/Program Files/Zotero/zotero.exe' --appearance-language zh-CN --screenshots
-pnpm run preview:research
-```
+PR/main 仅修改 Markdown 或 `docs/images/` 配图时跳过完整 CI。涉及代码、依赖或 CI 配置时仍自动执行测试、lint 与构建；`verify` 不作为直接提交或合并的强制门槛。标签与手动运行不受文档路径过滤影响。
 
-冒烟创建临时 profile、合成 PDF 和本地模拟接口，不使用真实账号或资料库。`smoke:installed` 验证三次冷启动；`smoke:research` 覆盖阅读器、AI 通道、翻译、解析、账号连接和元数据/PDF 上传，包括无 PDF 条目的独立跳过和关闭 PDF 后仅发送元数据。`--appearance-language` 验证中英文界面、常规设置及主题联动。模拟接口通过不等于生产 Provider 已验证；`preview:research` 用于查看研究工作台的界面状态。
+标签和手动运行会额外打包 Windows x64 引擎及离线套装。手动运行不创建正式 Release；公开 CI 的基础 XPI 不作为官方完整附件。工作分支名称不限；正式标签及 Release 标题沿用 `vX.Y.Z`，标签仍校验包版本和 main 来源。
 
-## 提交 PR
+## 正式发行（仅发版时使用）
 
-1. 从最新 `main` 创建短期功能分支；外部贡献者使用 fork，PR 的目标分支为 `main`。
-2. 一份 PR 解决一个明确问题，说明修改前后的行为、验证结果，以及兼容性或用户数据影响。推荐标题前缀 `feat`、`fix`、`docs`、`test`、`ci`、`chore`，不强制格式检查。
-3. UI 修改提供去除个人信息的截图。涉及阅读器、批注、本地历史或升级的修改，补充实际 Zotero/操作系统版本及针对性验证；没有环境时明确尚未验证的范围。
-4. 普通功能 PR 不主动改版本号；上游源码同步可携带尚未发布的版本号，通过普通描述性分支提交，并在中英文 README 与 CHANGELOG 中明确标注未发布，不要求创建发布分支。版本号变化本身不创建标签或 Release。不要提交 `build/`、`release/`、生成的 `manifest.json`、profile、日志或凭据。升级打包依赖时同步更新 `THIRD_PARTY_NOTICES.md`。
-5. 维护者解决评审讨论、确保分支与最新 `main` 同步且 `verify` 成功后 squash merge。只保留 `main` 作为长期开发分支，合并后删除功能分支。
+1. 确认版本、变更说明、下载入口与源码一致，完成相关测试、构建及 CI。版本号变化或源码推送本身不创建 Release。
+2. 使用已验证源码构建正式完整 XPI：`distribution=full`、`buildMode=production`，包含 `literature-tracking`。核对独立 XPI、离线套装内 XPI 和引擎摘要一致，运行现有发行校验。基础包、测试包不得替代官方附件。
+3. 创建草稿，上传 XPI、Windows x64 离线 ZIP、PDF/OCR 引擎 ZIP 以及四份元数据/摘要文件。重新下载核对摘要，验证安装、启动、升级和本版受影响的功能；引擎有变化时验证其安装与健康检查。写明实际系统、Zotero 版本和未测范围后发布。
 
-当前采用单维护者规则：所有改动经过 PR，强制批准人数为 0；外部 PR 仍由维护者审阅后合并。没有自动合并、强制 CODEOWNERS 审批、提交签名或日常管理员绕过。安全问题按 [SECURITY.md](SECURITY.md) 私下报告。
+已公开版本的标签和附件保持不可变；更换制品使用新版本。未公开标签仅在维护者明确要求时纠正。同名草稿或写入结果不明时先查询状态，避免覆盖。官网自动更新独立操作。
 
-## 维护者：上游回流
+### Release 正文格式
 
-现有商业插件目录继续作为开发上游。外部 PR 通过公开 CI 和评审后，维护者将同一补丁回流私有上游并完成相关验证，再合并公开 PR，拉取公开结果并核对两侧受管文件一致。保留原作者署名和公开 PR 关联；贡献者不需要私有仓库权限。
-
-内部开发通过白名单同步形成公开 PR，也经过相同检查。同步冲突必须先协调代码，不能强制覆盖公开侧贡献。受管内容一致后，维护者运行现有同步工具的 `--write` 刷新本地摘要，再以 `--check` 确认无差异。
-
-README 中英文、CHANGELOG、本文、SECURITY 和 `.github/` 在公开仓库独立维护；CI 流程脚本放在 `.github/scripts/`，不进入插件 XPI，也不纳入上游源码同步白名单。
-
-源码同步完成后，单独核对公开文档和已知文案分支：README 中英文的功能、入口、版本与链接应一致；CHANGELOG 按版本保留历史事实；CONTRIBUTING、SECURITY 与 DESIGN 应描述当前行为。不能把源码白名单同步通过当作全部文档已经发布。
-
-## CI 与仓库设置
-
-| 触发 | 行为 |
-| --- | --- |
-| PR → `main` | 冻结安装、测试、发布边界测试、lint、build；`verify` 是合并必过检查 |
-| 推送到 `main` | 验证实际合并结果 |
-| 推送 `v*` 标签 | 验证稳定版本、标签来源，验证并构建基础制品，维护者另行组装完整发行草稿 |
-| `workflow_dispatch` | 只验证并上传 Actions 制品，即使选择标签也不创建 Release |
-
-`verify` 超时 20 分钟，Windows x64 的 `package-offline` 超时 90 分钟，`draft-release` 超时 30 分钟。PR/main 只生成普通预览 XPI；标签及手动运行构建完整离线套装，手动运行不创建 Release。新 PR 提交取消同 PR 旧检查；标签运行按标签串行，不取消已在进行的发布。Actions 制品保留 30 天。Node/pnpm 使用项目固定版本，Actions 固定完整 commit SHA；更新 Actions 时必须核验上游仓库的目标提交。
-
-仓库设置作为本流程的一部分维护：
-
-- 只允许 squash merge；自动删除合并分支，关闭自动合并。
-- `main`：必须 PR、GitHub Actions 来源的 `verify` 成功、最新主分支基线、所有讨论解决、线性历史；批准人数为 0，禁止强推和删除，无绕过人员。
-- `v*`：创建规则只允许 `jadense-ai`；另一个无绕过规则禁止更新和删除，避免创建权限同时取得修改权限。
-- 启用 Release immutability：公开后锁定标签及附件。
-
-默认 `GITHUB_TOKEN` 只有 `contents: read`；仅草稿发布 job 获得 `contents: write`。使用 GitHub 托管 runner，不向外部 PR 提供 PAT、生产服务凭据或自托管执行环境。运行不可信 PR 不使用 `pull_request_target`。
-
-## 发布正式版本
-
-官方安装包包含可选发行模块；公开源码可独立构建基础版。公开 CI 校验 PR/main/tag，并产出基础版与 Windows x64 引擎制品，不自动创建正式草稿，基础 XPI 不得用作官方附件。只分发已验证的完整 XPI、引擎、离线套装及元数据，不上传模块源文件、测试、source map、构建中间目录或运行数据。
-
-1. 创建纯 `vX.Y.Z` 发布分支，通过 PR 更新版本、中英文 README、CHANGELOG 与用户指南；候选版本标记待发布。PR 与 main 的 `verify` 必须成功。
-2. 在已验证的 main 提交创建同名标签。标签必须与包版本一致、属于 main；已公开版本及其标签不可重用。仅当版本从未正式公开、旧草稿已废弃且维护者明确批准时，可纠正该未发布版本的标签：记录旧/新提交，先完成新提交 CI，仅临时排除该单一标签的保护，更新后立即恢复规则；不得扩大到已发布版本。
-3. 维护者准备完整正式 XPI（`distribution=full`、`buildMode=production`、features 含 `literature-tracking`），用经过 CI 校验的匹配引擎组装离线套装。套装内 XPI 必须与独立 XPI 字节一致，XPI 中的引擎清单与引擎摘要一致。
-4. 校验后创建草稿，仅上传八个附件：XPI、Windows x64 完整离线 ZIP、PDF 引擎 ZIP、OCR 引擎 ZIP、`release-metadata.json`、`SHA256SUMS`、`distribution-metadata.json`、`DISTRIBUTION-SHA256SUMS`。`.github/scripts/release.mjs` 拒绝基础版、测试包和缺失能力的正式附件；不能把这种拒绝视为绕过校验的理由。
-5. 从草稿重新下载制品核对摘要；对下载原件完成三次冷启动、研究工作台功能和从上一正式版的原位升级验收。使用临时 profile、合成资料与模拟接口，记录实际系统和 Zotero 版本及未测范围。
-6. 核对离线套装和两种引擎，在不依赖系统 Python/uv 的 Windows x64 环境验证导入与健康检查。补齐用户版 Release 正文并运行 `pnpm run release:notes:check -- <正文.md>`，全部完成后公开草稿。官网自动更新不随之改变。
-
-同名草稿存在时先检查状态，不自动覆盖；网络失败不能直接重试写入。只上传已校验的同一批制品。已发布附件不可变，更换制品使用新版本。完整套装仅覆盖 Windows x64；AI 翻译仍需要网络与服务，选文公式专用模型首次使用另行下载。
-
-## Release 说明文案
-
-
-### README 与指南发布清单
-
-本文件是发布规范的唯一入口；`.github/scripts/` 实施发布校验，README 面向用户，`docs/usage-guide.md` 和 `docs/local-ocr.md` 保存详细操作与配置。
-
-1. 新功能 PR 同步更新 README.md、README.en.md 与对应指南，写清入口、前置条件、配置字段、默认行为和失败后的操作；未发布功能必须明确标记。
-2. README 的 `release-summary` 区块按版本倒序最多列出最近五个正式版，每版一至两句话并链接 Release。更早版本仅保留在 CHANGELOG.md；未发布说明放在区块外。中英文版本列表必须一致。
-3. 发布 PR 更新 CHANGELOG 的中英文说明、README 安装包名和链接、操作/配置指南；候选版注明待发布，不提前宣称已可下载。公开后核对最新下载入口并移除该版本的未发布标记。
-4. Release 标题仅用 `vX.X.X`。从 v0.6.2 起，正文使用下方固定的五个二级标题，顺序、大小写及标点均不变；前两栏分别供中文、英文插件弹窗提取最新版本更新内容。
-5. 不以提交记录或内部开发过程代替用户文案，不公开私有来源、内部目录、凭据和商业决策。草稿占位符必须在公开前替换为真实信息；未实测范围如实说明。
-6. 运行测试、lint、build 和发布边界检查，PR 合并后确认 main CI，再打同名标签，按完整发行流程组装并创建草稿；使用草稿原始安装包完成原生与升级验收后公开。不得跳过 CI 或重打旧版制品。
-
-操作图更新可复用现有冒烟与预览：
-
-```powershell
-pnpm run build
-pnpm run smoke:research -- --zotero 'C:/Program Files/Zotero/zotero.exe' --screenshots --keep-temp
-pnpm run preview:research
-```
-
-将 Zotero 路径替换为本机路径。原生脚本会输出临时截图目录；浏览器预览只提供当前构建的真实 Manager 与模拟宿主。用浏览器截图工具操作配置表单即可，不向示例 Provider 发送请求。挑选必要图片保存到 `docs/images/guide-*.png`，不要复制 profile、日志、测试报告或整批临时文件。截图的生成不代表整套冒烟通过；存在超时或失败时分别记录，不将部分截图视为全量验收。
-
-当前操作图来自 0.4.4 构建：BYOK 提供商/模型、连接令牌与解析历史为浏览器预览，功能配置、选文工具条/翻译和手动框选为 Windows / Zotero 10.0.2 原生隔离截图。图中凭据与论文均为虚构，模型结果为模拟结果。
-
-### 用户版 Release 正文
-
-Release 面向插件用户，重点介绍功能和更新价值。以本次版本相对上一正式版的实际变化为准，不把已有功能重新包装成新增。
-
-- 开头用一两句话说明本次更新让哪些操作更方便、清楚或稳定。
-- 主体按用户场景组织，每项说明「功能变化 → 用户收益」，必要时给出设置或操作入口。用准确、具体的描述，避免空泛宣传或承诺未经验证的效果。
-- 升级方式、需要重启的设置、兼容性和影响使用的限制单独写清楚；不要用模糊措辞隐藏用户需要知道的行为变化。
-- 测试和制品核验记录放在末尾简述，区分已实测环境与 Manifest 声明范围；完整技术记录链接到 PR 或 CI。测试数量、内部重构、文件路径、接口名称和提交清单不作为正文主体。
-- 不披露内部产品决策动机、商业策略、私有地址、凭据或用户信息。只介绍公开功能及用户需要采取的操作。
-- 发布前将 CI 草稿中的验收占位符替换为真实结果，保持说明与实际附件、功能和版本一致。
-
-从 **v0.6.2** 起，每份正式 Release 正文必须按以下顺序包含且仅包含这五个 `##` 标题。前两栏各写 1–4 条简短的 Markdown 列表，每条最多 220 字，直接描述相对上一正式版的用户可见变化；不要在这两栏插入段落、子标题或验收记录。后三栏填写实际操作、升级影响及制品验证信息，不留占位符。`###` 子标题可用于后三栏的详细说明。中文和英文要点表达相同事实，插件按界面语言读取对应栏目。
+现有插件按标题提取中英文更新内容，因此保留以下五个标题。前两节各写 1–4 条面向用户的变化，其他节简述入口、兼容性和验证；不需要重复内部操作日志。
 
 ```markdown
 ## 本次更新
 
-- 用中文说明本版变化及其对用户的作用。
+- 本版对用户的变化。
 
 ## What's new
 
-- Describe the same user-facing change in English.
+- The same user-facing change in English.
 
 ## 操作与配置
 
-说明入口、配置和用户指南链接。
+入口、配置和指南链接。
 
 ## 升级与兼容
 
-说明安装、兼容范围、迁移或已知限制。
+升级方式与已知限制。
 
 ## 验证与下载
 
-说明实测 Zotero/系统版本、升级验证、附件及 SHA-256 校验。
+实测环境、附件和 SHA-256。
 ```
 
-以上代码块仅作结构示例，发布正文须替换成该版本的真实内容。GitHub 自动生成的提交摘要只能作为补充，不能代替面向用户的说明。
-
-
-## 分支、版本与发布名称
-
-- 长期分支仅保留 `main`。发布准备分支、Git 标签和 GitHub Release 标题统一为 `vX.X.X`，例如 `v0.4.8`；三个数字段不得有多余前导零。禁止 `codex/`、`codex-`、`release-` 前缀、产品名、空格、功能描述以及 beta/rc 后缀。
-- 普通功能分支使用简短功能名，不能伪装成发布分支；发布 PR 修改 package.json 版本时，分支必须精确匹配该版本。合并后删除短期分支，保留不可变版本标签。
-- 已发布标签和附件不重写；从未正式公开的标签仅按上述维护者明确批准的例外纠正；源码同步不自动构成新版本发布，未发布改动标记为 Unreleased。
+发布前运行 `pnpm run release:notes:check -- <正文.md>`。README 正式版摘要保留最近五版，完整历史放 CHANGELOG；未发布功能明确注明。只更新本版实际变化，不把现有功能重新写成新增。

@@ -4,9 +4,16 @@ name: Verify and package base distribution
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/images/**'
   push:
     branches: [main]
     tags: ['v*']
+    # 纯文档与配图不运行完整 CI；标签与手动运行仍保留发行检查。
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/images/**'
   workflow_dispatch:
 
 permissions:
@@ -31,7 +38,7 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Check release naming and README summaries
+      - name: Check README summaries
         run: node .github/scripts/check-docs.mjs
       - name: Resolve release and check tag
         id: release

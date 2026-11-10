@@ -2,7 +2,7 @@
   <img src="content/icons/logo-padded.png" width="128" height="128" alt="Jadense Logo">
 </p>
 <h1 align="center">Jadense in Zotero（个人 fork）</h1>
-<p align="center">攻玉学术 Zotero 阅读插件的个人改版 · 基线官方 v0.6.13</p>
+<p align="center">攻玉学术 Zotero 阅读插件的个人改版 · 基线官方 v0.6.14</p>
 <p align="center">
   <a href="https://www.zotero.org/download/"><img src="https://img.shields.io/badge/Zotero-8%20%7C%209%20%7C%2010-bb2222" alt="Zotero 8 / 9 / 10"></a>
   <a href="https://github.com/Rsamv/jadense-in-zotero/releases/latest"><img src="https://img.shields.io/github/v/release/Rsamv/jadense-in-zotero" alt="fork release"></a>
@@ -11,11 +11,11 @@
 
 **简体中文** · [English](README.en.md)
 
-> **这是个人 fork，不是官方发布渠道。** 上游是 [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero)，本分支以官方 `v0.6.13` 为基线，叠加自用改动。原 README 里的第三方 API 中转站推广、赞助二维码、Star 增长图和攻玉网页端引导已整块移除，只保留与插件使用有关的内容；官方功能说明见上游仓库与其[使用指南](docs/usage-guide.md)。
+> **这是个人 fork，不是官方发布渠道。** 上游是 [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero)，本分支以官方 `v0.6.14` 为基线，叠加自用改动。原 README 里的第三方 API 中转站推广、赞助二维码、Star 增长图和攻玉网页端引导已整块移除，只保留与插件使用有关的内容；官方功能说明见上游仓库与其[使用指南](docs/usage-guide.md)。
 >
-> 许可证不变，仍是 [Jadense Non-Commercial License 1.0](LICENSE)：仅限个人非商业自用，免费分发，须保留原版权声明，改动已在 [CHANGELOG.md](CHANGELOG.md) 顶部的 `0.6.13.x` 条目逐轮标注，下游继承同样的非商业条件。
+> 许可证不变，仍是 [Jadense Non-Commercial License 1.0](LICENSE)：仅限个人非商业自用，免费分发，须保留原版权声明，改动已在 [CHANGELOG.md](CHANGELOG.md) 顶部的 `0.6.13.x` / `0.6.14.x` 条目逐轮标注，下游继承同样的非商业条件。
 >
-> 本机构建版本号用四段（`0.6.13.1` → `0.6.13.13`），大于当轮官方、小于将来的官方 `0.6.14`。插件 ID 与包内 `update_url` 保持官方值，所以官方发布更高版本时，Zotero 自动更新会顶掉这里的构建——自用场景下这是预期行为；要长期留在改版上请关闭自动更新。
+> 本机构建版本号用四段（本轮为 `0.6.14.1`），大于当轮官方、小于将来的官方 `0.6.15`。插件 ID 与包内 `update_url` 保持官方值，所以官方发布更高版本时，Zotero 自动更新会顶掉这里的构建——自用场景下这是预期行为；要长期留在改版上请关闭自动更新。
 
 **在 Zotero 中读懂论文，并把「实际有什么」和「模型说什么」分开。**
 
@@ -24,15 +24,17 @@
 <!-- release-summary:start -->
 ## 上游版本基线
 
-本 fork 的代码基线是官方 v0.6.13（尚未发布）。以下是它之前的官方正式版，功能差异以 [CHANGELOG.md](CHANGELOG.md) 为准：
+本 fork 的代码基线是官方 v0.6.14。以下是它和它之前的官方正式版，功能差异以 [CHANGELOG.md](CHANGELOG.md) 为准：
 
+- [v0.6.14](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.14) — 新增默认关闭的证据溯源（行内引用、来源列表与 PDF 定位）与三步互动入门；统一离线安装帮助。
+- [v0.6.13](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.13) — 文献解析与对照翻译保存进度并支持继续，新增阅读字号与译文缩放，明确 PDF 失效任务的重新翻译入口。
 - [v0.6.12](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12) — 发现前沿分离首页、进行与结果，更新文献卡片和收藏操作，新增交集／并集检索与帮助。
 - [v0.6.11](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.11) — 发现前沿欢迎、扫描与历史布局更新，修复文本居中，改进收藏 PDF 上传恢复与翻译反馈。
 - [v0.6.10](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.10) — PDF 与 OCR 引擎可分别选择存储位置；BYOK 可按功能设置思考档位。
 - [v0.6.9](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.9) — 新增简阅模式与主动翻译，改进模型思考档位与翻译进度反馈。
 <!-- release-summary:end -->
 
-## 与官方 v0.6.13 的功能差异
+## 与官方 v0.6.14 的功能差异
 
 ### 一、收藏夹快速解析窗口（官方没有这个功能）
 
@@ -57,7 +59,8 @@
 
 - 发布新成稿后只保留当前与上一版快照，更早的成稿和写入中断留下的临时稿在下一次打开对照翻译时后台回收；版面解析缓存同样只保留两代。
 - 已删除文献的对照成果与版面缓存在连续两次确认（间隔一分钟以上）后清理，文献库尚未就绪时一律不删。想保留的话把首选项 `extensions.jadenseInZotero.removeOrphanTranslatedPDF` 设为 `false`（默认开启清理）。
-- 对照译文 PDF 完成后可自动保存到上次导出的目录（`extensions.jadenseInZotero.autoSaveTranslatedPDF`，默认开启），以文献标题命名，不会覆盖原 PDF 或已有文件。
+- 对照译文 PDF 完成后可自动保存到指定目录（`extensions.jadenseInZotero.autoSaveTranslatedPDF`，默认开启），保存时重新解析文献标题，不会覆盖原 PDF 或已有文件。
+- 记住的目录被移动或删除时不再静默跳过：完成时会提示「自动保存目录不存在」，点「选择保存目录」选好新目录后立即补存这一篇，并记住新目录；「功能配置 → 对照翻译」也提供自动保存开关、当前目录、选择与清除目录。
 - 缓存清理脚本随本仓库外的工具单独维护，删除前一定先出 dry-run 清单，插件或 Zotero 正在写入时拒绝执行。
 
 ### 三、错误提示
@@ -86,7 +89,7 @@
 
 ## 版本命名
 
-包内版本是四段 `0.6.13.x`；本仓库的 Release 序号与包内版号一一对应，规则为 `v0.(10 + x)`——`v0.16` 对应 `0.6.13.6`，`v0.23` 对应 `0.6.13.13`。每轮发布只保留最新一条 Release，旧的连同其标签一起删除，避免装到过期包。
+包内版本是四段 `0.6.14.x`；从 `0.6.13` 基线起的本地轮次是 `0.6.13.1` → `0.6.13.13`，本轮的 `0.6.14.1` 与 GitHub Release 标签 `v0.24` 对应，之后 `v0.25`、`v0.26` 依次递增。每轮发布只保留最新一条 Release，旧的连同其标签一起删除，避免装到过期包。
 
 ## 从源码构建与跟随官方更新
 
@@ -99,7 +102,7 @@ npm test               # vitest
 # 跟随官方发版
 git fetch upstream --tags
 git checkout local
-git merge upstream/tags/v0.6.14   # 冲突集中在 CHANGELOG.md 与 docs/usage-guide.md
+git merge upstream/main           # 冲突集中在 CHANGELOG.md、README 与 docs/usage-guide.md
 ```
 
 上游 `.github/scripts/release.mjs resolve` 不接受四段版本号，直接照搬上游 workflow 会让 CI 变红；本 fork 手动打标签、手动上传 XPI。完整开发说明见上游 [CONTRIBUTING.md](CONTRIBUTING.md)。

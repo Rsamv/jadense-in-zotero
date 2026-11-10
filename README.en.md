@@ -2,7 +2,7 @@
   <img src="content/icons/logo-padded.png" width="128" height="128" alt="Jadense Logo">
 </p>
 <h1 align="center">Jadense in Zotero (personal fork)</h1>
-<p align="center">A private build of the Jadense Zotero reading plugin, based on official v0.6.13</p>
+<p align="center">A private build of the Jadense Zotero reading plugin, based on official v0.6.14</p>
 <p align="center">
   <a href="https://www.zotero.org/download/"><img src="https://img.shields.io/badge/Zotero-8%20%7C%209%20%7C%2010-bb2222" alt="Zotero 8 / 9 / 10"></a>
   <a href="https://github.com/Rsamv/jadense-in-zotero/releases/latest"><img src="https://img.shields.io/github/v/release/Rsamv/jadense-in-zotero" alt="fork release"></a>
@@ -11,13 +11,13 @@
 
 [简体中文](README.md) · **English**
 
-> **This is a personal fork, not an official release channel.** The upstream project is [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero); this branch starts from official `v0.6.13` and adds changes for personal use: a collection quick-review window (0–100 per-paper ratings, local PDF link/appendix/layout forensics, bounded per-paper deep read) and bilingual-translation cache reclamation.
+> **This is a personal fork, not an official release channel.** The upstream project is [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero); this branch starts from official `v0.6.14` and adds changes for personal use: a collection quick-review window (0–100 per-paper ratings, local PDF link/appendix/layout forensics, bounded per-paper deep read) and bilingual-translation cache reclamation with auto-save and save-time naming.
 >
 > The upstream README's third-party API reseller promotion, donation pages, star-history chart and web-app upsell sections have been removed here. Nothing was put in their place — no analytics, no redirect endpoints. Official feature documentation still lives upstream and in [docs/usage-guide.md](docs/usage-guide.md).
 >
-> The license is unchanged — [Jadense Non-Commercial License 1.0](LICENSE): personal non-commercial use only, distributed free of charge, original copyright notices retained, modifications identified in the `0.6.13.x` entries at the top of [CHANGELOG.md](CHANGELOG.md), and the same non-commercial conditions passed on downstream.
+> The license is unchanged — [Jadense Non-Commercial License 1.0](LICENSE): personal non-commercial use only, distributed free of charge, original copyright notices retained, modifications identified in the `0.6.13.x` / `0.6.14.x` entries at the top of [CHANGELOG.md](CHANGELOG.md), and the same non-commercial conditions passed on downstream.
 >
-> Local versions use four segments (`0.6.13.1` → `0.6.13.13`), newer than the current official build but older than a future official `0.6.14`. The add-on ID and the packaged `update_url` keep the official values, so an official release newer than the local one replaces this fork's build through auto-update — intended for personal use, but anyone staying on the fork should disable automatic updates.
+> Local versions use four segments (currently `0.6.14.1`), newer than the current official build but older than a future official `0.6.15`. The add-on ID and the packaged `update_url` keep the official values, so an official release newer than the local one replaces this fork's build through auto-update — intended for personal use, but anyone staying on the fork should disable automatic updates.
 
 **Understand papers in Zotero, and turn what you read into the next step of your research.**
 
@@ -31,15 +31,17 @@ Jadense in Zotero is a source-available AI reading assistant from [Jadense (攻�
 
 The client is source-available under the [non-commercial license](LICENSE). Model usage is billed according to your chosen provider or your Jadense account's subscription and points rules.
 
-**This fork is at package version 0.6.13.13** (release `v0.23`), built on official `v0.6.13`. Rounds `0.6.13.1` through `0.6.13.13` are listed one by one at the top of [CHANGELOG.md](CHANGELOG.md); the sections below summarise what they add.
+**This fork is at package version 0.6.14.1** (release `v0.24`), built on official `v0.6.14`. Rounds `0.6.13.1` through `0.6.13.13` and the current `0.6.14.1` are listed one by one at the top of [CHANGELOG.md](CHANGELOG.md); the sections below summarise what they add.
 
 The baseline itself was verified by upstream on Windows 11 / Zotero 10.0.6. This fork has been run on the same pair with 35 real PDFs in a personal library; macOS, Linux, Zotero 8/9 and live paid providers were not tested.
 
 <!-- release-summary:start -->
 ## Upstream release baseline
 
-This fork's code baseline is official v0.6.13 (not yet released upstream). The published official releases it descends from:
+This fork's code baseline is official v0.6.14. The published official releases it descends from:
 
+- [v0.6.14](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.14) — Adds opt-in evidence tracing (inline citations, source lists and PDF jumps) and a three-step interactive onboarding; unifies offline-install help.
+- [v0.6.13](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.13) — Paper analysis and bilingual translation save progress and can resume; adds reading font size and translation zoom; clarifies the re-translate entry for PDFs that became unavailable.
 - [v0.6.12](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12) — Separate discovery home, progress and results; refresh paper cards and saving, add all-keyword / any-keyword search.
 - [v0.6.11](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.11) — Refresh discovery welcome, scanning and history; fix centered text, improve PDF upload recovery.
 - [v0.6.10](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.10) — Separate PDF and OCR engine locations, per-feature BYOK thinking levels.
@@ -48,7 +50,7 @@ This fork's code baseline is official v0.6.13 (not yet released upstream). The p
 
 <a id="fork-differences"></a>
 
-## What this branch changes, compared with official v0.6.13
+## What this branch changes, compared with official v0.6.14
 
 ### 1. Collection quick review (not present in official builds)
 
@@ -73,7 +75,8 @@ A separate window opened from a Zotero collection's context menu walks that coll
 
 - Publishing a new revision keeps only the current and previous snapshot; older published outputs and interrupted temporary files are reclaimed in the background the next time the bilingual reader opens. Layout parsing keeps the same two generations.
 - Results and layout caches of attachments deleted from the library are reclaimed after two confirmations at least a minute apart, and nothing is deleted while the library is not ready. Set `extensions.jadenseInZotero.removeOrphanTranslatedPDF` to `false` to keep them.
-- Finished translated PDFs can auto-save to the last used export directory (`extensions.jadenseInZotero.autoSaveTranslatedPDF`, on by default), named after the parent item, never overwriting the original PDF or an existing file.
+- Finished translated PDFs can auto-save to the configured directory (`extensions.jadenseInZotero.autoSaveTranslatedPDF`, on by default). The file name is resolved from the parent item's title at save time, so tasks created by older or official builds — which stored only the placeholder `"PDF"` — still get a real name; the original PDF and existing files are never overwritten.
+- If the remembered directory has been moved or deleted, completion no longer skips silently: a warning says the auto-save folder is missing and offers **Choose folder**, which saves this translation immediately and remembers the new directory. **Settings → Feature settings → PDF translation** also exposes the toggle, the current folder, and choose/clear buttons.
 
 ### 3. Error messages
 
@@ -88,7 +91,7 @@ Failure notices gain a typed prefix (e.g. [Upstream service error · 503]) built
 
 ### 5. Release numbering
 
-Package versions are four-segment (`0.6.13.13`); this repository's release numbers map one-to-one as `v0.(10 + x)`, so `v0.16` was `0.6.13.6` and `v0.23` is `0.6.13.13`. Only the newest release is kept, together with its tag.
+Package versions are four-segment (`0.6.14.x`); local rounds from the `0.6.13` baseline run `0.6.13.1` → `0.6.13.13`, and the current `0.6.14.1` maps to release tag `v0.24`, then `v0.25`, `v0.26` upward. Only the newest release is kept, together with its tag.
 
 
 <a id="requirements"></a>
@@ -106,10 +109,10 @@ Package versions are four-segment (`0.6.13.13`); this repository's release numbe
 
 | Method | How | Notes |
 | --- | --- | --- |
-| [This fork's Releases](https://github.com/Rsamv/jadense-in-zotero/releases/latest) | Download the `.xpi`, then open it from Zotero **Tools → Plugins → gear → Install Plugin From File…** | Each release carries a `SHA256SUMS` file. The current build is `0.6.13.13` (release `v0.23`). Do not use the **Source code** archive as an installer |
+| [This fork's Releases](https://github.com/Rsamv/jadense-in-zotero/releases/latest) | Download the `.xpi`, then open it from Zotero **Tools → Plugins → gear → Install Plugin From File…** | Each release carries a `SHA256SUMS` file. The current build is `0.6.14.1` (release `v0.24`). Do not use the **Source code** archive as an installer |
 | Official channel | Install from [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero/releases/latest) or the [official plugin page](https://jadense.cn/plugin/zotero) | Different code, same add-on ID `jadense-in-zotero@jadense.cn`; whichever you install last is the one Zotero keeps |
 | Zotero automatic update | In Zotero, open **Tools → Plugins → gear → Check for Updates** | The packaged `update_url` still points at the [official Jadense manifest](https://jadense.cn/plugins/zotero/jadense-in-zotero/updates.json), so an official release newer than this fork overwrites these builds. Disable automatic updates to stay on the fork |
-| Build from source | Follow the [contributor guide](CONTRIBUTING.md#开发与本机验证) with Node 24 and pnpm 10.19.0 | This branch's source builds `0.6.13.13`; the upstream release script rejects four-segment versions, so tags and artifacts are produced manually here |
+| Build from source | Follow the [contributor guide](CONTRIBUTING.md#开发与本机验证) with Node 24 and pnpm 10.19.0 | This branch's source builds `0.6.14.1`; the upstream release script rejects four-segment versions, so tags and artifacts are produced manually here |
 
 Do not enable the legacy `jadense-in-zotero@jadense.com` identity alongside the current one. See [upgrade instructions](#upgrade) for migration details.
 
@@ -144,7 +147,7 @@ The **[detailed OCR installation guide (Chinese)](docs/local-ocr.md)** covers [s
 
 ## Contents
 
-- [What this branch changes, compared with official v0.6.13](#fork-differences)
+- [What this branch changes, compared with official v0.6.14](#fork-differences)
 - [Start here: requirements, installation methods, and feature links](#requirements)
 - [OCR dependency installation](#ocr-installation)
 - [PDF layout engine setup](#pdf-engine-installation)
@@ -177,7 +180,7 @@ The workbench supports both English and Simplified Chinese. The steps below also
 
 ### 1. Install and open the workbench
 
-1. Download the `.xpi` from [this fork's latest release](https://github.com/Rsamv/jadense-in-zotero/releases/latest) — currently **0.6.13.13** — and check it against the release's `SHA256SUMS`. If you have an older version installed, read the [upgrade instructions](#upgrade) first.
+1. Download the `.xpi` from [this fork's latest release](https://github.com/Rsamv/jadense-in-zotero/releases/latest) — currently **0.6.14.1** — and check it against the release's `SHA256SUMS`. If you have an older version installed, read the [upgrade instructions](#upgrade) first.
 2. In Zotero's plugin manager, choose the option to install a plugin from a file and select the XPI.
 3. Open the workbench from Zotero's Jadense entry and choose how to connect to a model service.
 
@@ -338,10 +341,10 @@ The new version retains the existing preference namespace and history location. 
 
 Report plugin problems through the [upstream issue tracker](https://github.com/jadense-ai/jadense-in-zotero/issues), with the plugin version, Zotero version, operating system and reproduction steps, and with account details and private material removed — unless the behaviour only exists in this fork, in which case open an issue here. This fork is maintained for personal use; no response time is promised for third-party reports.
 
-To build this branch yourself: Node 24 and pnpm 10.19.0, then `pnpm install && npm run build && npm test`. To follow an official release, `git fetch upstream --tags` and merge the new tag into `local`; the conflicts concentrate in `CHANGELOG.md` and `docs/usage-guide.md`. The upstream release script rejects four-segment versions, so tagging and artifact upload stay manual here. See [CONTRIBUTING.md](CONTRIBUTING.md) for the upstream workflow and [DESIGN.md](DESIGN.md) for product design.
+To build this branch yourself: Node 24 and pnpm 10.19.0, then `pnpm install && npm run build && npm test`. To follow an official release, `git fetch upstream --tags` and `git merge upstream/main` into `local`; the conflicts concentrate in `CHANGELOG.md`, the READMEs and `docs/usage-guide.md`. The upstream release script rejects four-segment versions, so tagging and artifact upload stay manual here. See [CONTRIBUTING.md](CONTRIBUTING.md) for the upstream workflow and [DESIGN.md](DESIGN.md) for product design.
 
 ## License
 
-The code stays under the [Jadense Non-Commercial License 1.0](LICENSE): personal non-commercial use, learning and research are free, redistribution is free under its terms, commercial use needs separate written authorization, and downstream copies inherit the same conditions. Every local round's changes are identified in the `0.6.13.x` entries at the top of [CHANGELOG.md](CHANGELOG.md).
+The code stays under the [Jadense Non-Commercial License 1.0](LICENSE): personal non-commercial use, learning and research are free, redistribution is free under its terms, commercial use needs separate written authorization, and downstream copies inherit the same conditions. Every local round's changes are identified in the `0.6.13.x` / `0.6.14.x` entries at the top of [CHANGELOG.md](CHANGELOG.md).
 
 This is source-available software, not OSI open source: the [Open Source Definition](https://opensource.org/osd) does not allow restrictions on commercial use. The license does not revoke rights in previously MIT-licensed material or change third-party licenses. Preserved notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The plugin ID, the packaged update feed, the Jadense name and its trademarks belong to the upstream project and are not licensed by this fork.
