@@ -22,6 +22,10 @@ export function readTranslatedPDFDirectory(host: ZoteroLike): string {
   const value = host.Prefs?.get(TRANSLATED_PDF_DIRECTORY_PREF, true)
   return typeof value === 'string' ? value.trim() : ''
 }
+export function saveTranslatedPDFDirectory(host: ZoteroLike, directory: string) {
+  const value = String(directory ?? '').trim()
+  if (value) host.Prefs?.set(TRANSLATED_PDF_DIRECTORY_PREF, value, true)
+}
 export function forgetTranslatedPDFDirectory(host: ZoteroLike) {
   host.Prefs?.set(TRANSLATED_PDF_DIRECTORY_PREF, '', true)
 }

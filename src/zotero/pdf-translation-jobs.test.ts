@@ -8,6 +8,7 @@ import { translateMachineText } from '@/chat/machine-translation'
 import { requestHash } from '@/chat/temporary-request-store'
 import { PDF_ENGINE, PDF_ADAPTER, pdfRuntimeRoot, pdfTaskDirectory } from './pdf-translation-runtime'
 import { readPDFTranslationMode, savePDFTranslationMode } from './pdf-translation-policy'
+import { AUTO_SAVE_TRANSLATED_PDF_PREF, TRANSLATED_PDF_DIRECTORY_PREF } from './pdf-translation-autosave'
 import { ReliableTemporaryChatClient, TemporaryPartialOutputError } from '@/chat/reliable-temporary-chat'
 import { resolveTemporaryAccount } from '@/chat/temporary-account'
 
@@ -619,17 +620,20 @@ describe('PDF jobs', () => {
   it('exports the selected artifact and refuses to overwrite the source PDF', async () => {
     const jobs = new PDFTranslationJobs(host), task = await jobs.start(1)
     await vi.waitFor(() => expect(task.status).toBe('complete'))
+    task.source.title = 'PDF'
     let destination = '/export.pdf'
-    let result = 0
+    let result = 0, defaultString = ''
     const copy = vi.fn(async () => {})
     Object.assign(globalThis.IOUtils ?? {}, { copy })
     const init = vi.fn()
     class FilePicker {
       modeSave = 1; returnCancel = 1; init = init; appendFilter() {} async show() { return result }
+      get defaultString() { return defaultString } set defaultString(value: string) { defaultString = value }
       get file() { return destination }
     }
     vi.stubGlobal('ChromeUtils', { importESModule: () => ({ FilePicker }) })
     await jobs.export(task.id, 'dual', {} as Window)
+    expect(defaultString).toBe('Paper-对照.pdf')
     expect(copy).toHaveBeenCalledWith(expect.stringMatching(/dual\.pdf$/u), '/export.pdf')
     expect(init).toHaveBeenCalledWith(expect.objectContaining({ fetch: expect.any(Function) }), expect.any(String), 1)
     destination = '/source.pdf'
@@ -641,6 +645,27 @@ describe('PDF jobs', () => {
     result = 1
     await jobs.export(task.id, 'mono', {} as Window)
     expect(copy).toHaveBeenCalledTimes(2)
+  })
+  it('auto-saves using the resolved literature title even when the task stored the PDF placeholder', async () => {
+    preferences.set(AUTO_SAVE_TRANSLATED_PDF_PREF, true)
+    preferences.set(TRANSLATED_PDF_DIRECTORY_PREF, '/out')
+    const copy = vi.fn(async () => {})
+    Object.assign(globalThis.IOUtils!, { copy, exists: async (target: string) => target !== '/out/Paper-对照.pdf' })
+    const jobs = new PDFTranslationJobs(host), task = await jobs.start(1)
+    task.source.title = 'PDF'
+    await vi.waitFor(() => expect(task.status).toBe('complete'))
+    await vi.waitFor(() => expect(copy).toHaveBeenCalled())
+    expect(copy).toHaveBeenCalledWith(expect.stringMatching(/dual\.pdf$/u), '/out/Paper-对照.pdf')
+  })
+  it('skips the copy when the remembered auto-save folder no longer exists', async () => {
+    preferences.set(AUTO_SAVE_TRANSLATED_PDF_PREF, true)
+    preferences.set(TRANSLATED_PDF_DIRECTORY_PREF, '/missing')
+    const copy = vi.fn(async () => {})
+    Object.assign(globalThis.IOUtils!, { copy, exists: async (target: string) => target !== '/missing' })
+    const jobs = new PDFTranslationJobs(host), task = await jobs.start(1)
+    await vi.waitFor(() => expect(task.status).toBe('complete'))
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(copy).not.toHaveBeenCalled()
   })
   it('stops requests on cancel and keeps retry disabled until the last artifact is saved', async () => {
     const finish = vi.mocked(runPDFWorker).getMockImplementation()!

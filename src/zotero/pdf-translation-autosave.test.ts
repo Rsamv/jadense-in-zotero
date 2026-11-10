@@ -11,6 +11,7 @@ import {
   rememberTranslatedPDFDirectory,
   sanitizePDFBaseName,
   saveAutoSaveTranslatedPDF,
+  saveTranslatedPDFDirectory,
   translatedPDFFileName,
 } from './pdf-translation-autosave'
 
@@ -74,6 +75,10 @@ it('defaults auto-save on, remembers a folder, and can forget it', () => {
   rememberTranslatedPDFDirectory(host, '/out/bilingual.pdf')
   expect(readTranslatedPDFDirectory(host)).toBe('/out')
   expect(store.get(TRANSLATED_PDF_DIRECTORY_PREF)).toBe('/out')
+  saveTranslatedPDFDirectory(host, '/chosen')
+  expect(readTranslatedPDFDirectory(host)).toBe('/chosen')
   forgetTranslatedPDFDirectory(host)
+  expect(readTranslatedPDFDirectory(host)).toBe('')
+  saveTranslatedPDFDirectory(host, '  ')
   expect(readTranslatedPDFDirectory(host)).toBe('')
 })

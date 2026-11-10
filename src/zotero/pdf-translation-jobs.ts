@@ -21,7 +21,8 @@ import { uiText } from './ui-preferences'
 import { diagnostics } from './diagnostics'
 import { documentIssue } from './document-notices'
 import { readPDFTranslationMode, readPDFCoverage, pdfProviderFailure, type PDFTranslationMode, type PDFCoverage, type PDFArtifact } from './pdf-translation-policy'
-import { readAutoSaveTranslatedPDF, readRemoveOrphanTranslatedPDF, readTranslatedPDFDirectory, rememberTranslatedPDFDirectory, stripPDFExtension, translatedPDFFileName } from './pdf-translation-autosave'
+import { readAutoSaveTranslatedPDF, readRemoveOrphanTranslatedPDF, readTranslatedPDFDirectory, rememberTranslatedPDFDirectory, saveTranslatedPDFDirectory, stripPDFExtension, translatedPDFFileName } from './pdf-translation-autosave'
+import { show } from './ui/toast'
 
 // 快照文件都带 revision 前缀，含写入中断残留的 .tmp.pdf。
 const REVISION_FILE = /^[0-9a-f]{32}-(mono|dual)(\.tmp)?\.pdf$/u
@@ -134,6 +135,7 @@ export class PDFTranslationJobs {
   private writes = new Map<string, Promise<void>>()
   private runs = new Map<string, Promise<void>>()
   private cancellations = new Map<string, Promise<void>>()
+  private missingAutoSaveDirectories = new Set<string>()
   private credentialObservers: unknown[] = []
   private credentialChecks = new Set<Promise<void>>()
   private credentialRevision = 0
@@ -634,7 +636,7 @@ export class PDFTranslationJobs {
     const picker = new FilePicker()
     picker.init(this.host.getMainWindow?.() ?? win, uiText('保存译文 PDF', 'Save translated PDF'), picker.modeSave)
     const task = this.tasks.get(id)!, source = await pdfSource(this.host, task.source.itemID)
-    picker.defaultString = translatedPDFFileName(task.source.title, pdfPlatform().PathUtils.filename(source.path), kind)
+    picker.defaultString = translatedPDFFileName(source.source.title, pdfPlatform().PathUtils.filename(source.path), kind)
     picker.defaultExtension = 'pdf'; picker.appendFilter('PDF', '*.pdf')
     if (await picker.show() !== picker.returnCancel && picker.file) {
       if (picker.file.replace(/\\/gu, '/').toLowerCase() === source.path.replace(/\\/gu, '/').toLowerCase()) throw new Error(uiText('请选择新的文件名，不能覆盖原 PDF。', 'Choose a new filename to preserve the original PDF.'))
@@ -643,17 +645,54 @@ export class PDFTranslationJobs {
     }
     } finally { this.storageReaders-- }
   }
-  /** 自动保存对照译文到上次保存过的目录；不弹窗、不覆盖已有文件，失败不影响任务。 */
+  /** 自动保存对照译文到上次保存过的目录；目录不可用时给出可操作提示，不覆盖已有文件。 */
   private async autoSave(task: PDFTranslationTask) {
     try {
       if (!readAutoSaveTranslatedPDF(this.host) || !this.hasOutput(task)) return
       const directory = readTranslatedPDFDirectory(this.host)
       if (!directory) return
-      const source = await pdfSource(this.host, task.source.itemID)
-      const target = await this.autoSaveTarget(directory, translatedPDFFileName(task.source.title, pdfPlatform().PathUtils.filename(source.path), 'dual'))
-      if (target.replace(/\\/gu, '/').toLowerCase() === source.path.replace(/\\/gu, '/').toLowerCase()) return
-      await pdfPlatform().IOUtils.copy(this.outputPath(task, 'dual'), target)
+      if (!await pdfPlatform().IOUtils.exists(directory)) {
+        this.reportMissingAutoSaveDirectory(task, directory)
+        return
+      }
+      this.missingAutoSaveDirectories.delete(directory)
+      await this.copyToAutoSaveDirectory(task, directory)
     } catch { /* 自动保存失败只放弃本次副本。 */ }
+  }
+  private async copyToAutoSaveDirectory(task: PDFTranslationTask, directory: string) {
+    const source = await pdfSource(this.host, task.source.itemID)
+    // 旧版或官方版创建的任务只存了附件占位名 "PDF"；命名以当前解析出的文献标题为准。
+    const target = await this.autoSaveTarget(directory, translatedPDFFileName(source.source.title, pdfPlatform().PathUtils.filename(source.path), 'dual'))
+    if (target.replace(/\\/gu, '/').toLowerCase() === source.path.replace(/\\/gu, '/').toLowerCase()) return
+    await pdfPlatform().IOUtils.copy(this.outputPath(task, 'dual'), target)
+  }
+  /** 同一缺失目录每次会话只提示一次；选好新目录后当前这篇立即补存。 */
+  private reportMissingAutoSaveDirectory(task: PDFTranslationTask, directory: string) {
+    if (this.missingAutoSaveDirectories.has(directory)) return
+    this.missingAutoSaveDirectories.add(directory)
+    try {
+      const recent = (globalThis as unknown as { Services?: { wm?: { getMostRecentWindow(type: null): Window | null } } }).Services?.wm?.getMostRecentWindow(null)
+      const win = recent && !recent.closed && String(recent.location?.href).includes('jadense-in-zotero') ? recent : this.host.getMainWindow?.()
+      if (!win || win.closed) return
+      const doc = win.document
+      show({ document: doc, themeRoot: doc.getElementById('jadense-manager-shell') ?? doc.documentElement, type: 'warning', duration: 0,
+        message: uiText(`自动保存目录不存在：${directory}。请选择新的保存目录，这篇译文会立即补存。`, `Auto-save folder not found: ${directory}. Choose a new folder to save this translation now.`),
+        actions: [{ label: uiText('选择保存目录', 'Choose folder'), onClick: () => this.chooseAutoSaveDirectory(task) }] })
+    } catch { /* 提示失败不影响译文本身。 */ }
+  }
+  private async chooseAutoSaveDirectory(task: PDFTranslationTask) {
+    try {
+      const platform = globalThis as unknown as { ChromeUtils: { importESModule(url: string): { FilePicker: new () => { init(win: Window, title: string, mode: number): void; modeGetFolder: number; returnCancel: number; show(): Promise<number>; file: string } } } }
+      const { FilePicker } = platform.ChromeUtils.importESModule('chrome://zotero/content/modules/filePicker.mjs')
+      const win = this.host.getMainWindow?.()
+      if (!win) return
+      const picker = new FilePicker()
+      picker.init(win, uiText('选择译文自动保存目录', 'Choose auto-save folder for translated PDFs'), picker.modeGetFolder)
+      if (await picker.show() === picker.returnCancel || !picker.file) return
+      saveTranslatedPDFDirectory(this.host, picker.file)
+      this.missingAutoSaveDirectories.clear()
+      await this.copyToAutoSaveDirectory(task, picker.file)
+    } catch { /* 选择失败时保持原目录，可在设置中重选。 */ }
   }
   /** 已存在同名文件时不覆盖，追加序号；仍冲突时使用时间戳。 */
   private async autoSaveTarget(directory: string, fileName: string) {
