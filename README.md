@@ -15,7 +15,7 @@
 >
 > 许可证不变，仍是 [Jadense Non-Commercial License 1.0](LICENSE)：仅限个人非商业自用，免费分发，须保留原版权声明，改动已在 [CHANGELOG.md](CHANGELOG.md) 顶部的 `0.6.13.x` / `0.6.14.x` 条目逐轮标注，下游继承同样的非商业条件。
 >
-> 本机构建版本号用四段（本轮为 `0.6.14.1`），大于当轮官方、小于将来的官方 `0.6.15`。插件 ID 与包内 `update_url` 保持官方值，所以官方发布更高版本时，Zotero 自动更新会顶掉这里的构建——自用场景下这是预期行为；要长期留在改版上请关闭自动更新。
+> 本机构建版本号用四段（本轮为 `0.6.14.2`），大于当轮官方、小于将来的官方 `0.6.15`。插件 ID 与包内 `update_url` 保持官方值，所以官方发布更高版本时，Zotero 自动更新会顶掉这里的构建——自用场景下这是预期行为；要长期留在改版上请关闭自动更新。
 
 **在 Zotero 中读懂论文，并把「实际有什么」和「模型说什么」分开。**
 
@@ -89,7 +89,7 @@
 
 ## 版本命名
 
-包内版本是四段 `0.6.14.x`；从 `0.6.13` 基线起的本地轮次是 `0.6.13.1` → `0.6.13.13`，本轮的 `0.6.14.1` 与 GitHub Release 标签 `v0.24` 对应，之后 `v0.25`、`v0.26` 依次递增。每轮发布只保留最新一条 Release，旧的连同其标签一起删除，避免装到过期包。
+包内版本是四段 `0.6.14.x`；从 `0.6.13` 基线起的本地轮次是 `0.6.13.1` → `0.6.13.13`，本轮的 `0.6.14.2` 与 GitHub Release 标签 `v0.25` 对应，之后 `v0.26`、`v0.27` 依次递增。每轮发布只保留最新一条 Release，旧的连同其标签一起删除，避免装到过期包。
 
 ## 从源码构建与跟随官方更新
 
@@ -149,6 +149,6 @@ What this branch adds:
 - **Scan failures never masquerade as "found nothing"**: each paper carries a `scanOutcome`, so an unreadable attachment list says "attachment unavailable (retried next run)" instead of "read 0 pages, no links".
 - **Malformed JSON recovery** in three stages instead of losing the whole review to one unescaped quote.
 
-Deliberately unchanged: the BYOK non-idempotence fence (an unconfirmed execution that already produced output is never resent automatically — only once, after you check with the provider and explicitly authorise it), error projection limited to code／HTTP status／class name, one dispatch per batch review, the same billing destination as "paper analysis", and the official plugin ID and update URL. Package versions are four-segment (`0.6.14.1`); fork releases map as `v0.(10 + x)`, so `v0.23` is `0.6.13.13` and `v0.24` is `0.6.14.1`. Because the plugin ID and update feed stay official, an official release newer than this branch will replace these builds through Zotero's automatic update — turn automatic update off if you want to stay on the fork.
+Deliberately unchanged: the BYOK non-idempotence fence (an unconfirmed execution that already produced output is never resent automatically — only once, after you check with the provider and explicitly authorise it), error projection limited to code／HTTP status／class name, one dispatch per batch review, the same billing destination as "paper analysis", and the official plugin ID and update URL. Package versions are four-segment (`0.6.14.2`); fork releases map as `v0.(10 + x)`, so `v0.23` is `0.6.13.13` and `v0.25` is `0.6.14.2`. Because the plugin ID and update feed stay official, an official release newer than this branch will replace these builds through Zotero's automatic update — turn automatic update off if you want to stay on the fork.
 
 Licence is unchanged: Jadense Non-Commercial License 1.0 (personal non-commercial use, free redistribution with attribution, changes documented, downstream inherits the same terms). See [CHANGELOG.md](CHANGELOG.md) for the per-round diff against official.

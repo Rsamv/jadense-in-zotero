@@ -287,6 +287,25 @@ def valid_output(source, output):
     return isinstance(output, str) and bool(output.strip()) and MARKERS.findall(source) == MARKERS.findall(output)
 
 
+def trim_echoed_suffix(text, later):
+    """模型偶尔把后一段并进前一段；仅删除后段已独立译出的同一结尾。"""
+    later = MARKERS.sub('', later or '').strip()
+    if len(later) < 24 or len(text) <= len(later):
+        return None
+    plain, positions, offset = [], [], 0
+    for match in MARKERS.finditer(text):
+        plain.extend(text[offset:match.start()])
+        positions.extend(range(offset, match.start()))
+        offset = match.end()
+    plain.extend(text[offset:])
+    positions.extend(range(offset, len(text)))
+    plain = ''.join(plain).rstrip()
+    if not plain.endswith(later):
+        return None
+    cut = positions[len(plain) - len(later)]
+    return text[:cut].rstrip()
+
+
 def repair_json_syntax(raw):
     """只修复字符串外尾逗号及字符串内非法反斜杠，不改动译文中的逗号/引号。"""
     result, quoted, index, closing = [], False, 0, []
@@ -532,6 +551,36 @@ class IncompleteTranslation(Exception):
         super().__init__(f'Translation paused: {missing} passages remain incomplete after one repair')
 
 
+def install_typesetting(high_level):
+    """字号被迫缩到 0.7 以下时，先改用同页空栏再从原字号重算，不跨页搬动译文。"""
+    typesetting = getattr(high_level, 'Typesetting', None)
+    original = getattr(typesetting, '_find_optimal_scale_and_layout', None)
+    if original is None or getattr(original, '_jadense_reflow', False):
+        return
+
+    def find(self, paragraph, page, units, initial_scale=1.0, use_english_line_break=True, apply_layout=False):
+        scale, layout = original(self, paragraph, page, units, initial_scale, use_english_line_break, apply_layout)
+        if scale >= 0.7 or paragraph.box is None or initial_scale != 1.0 or apply_layout:
+            return scale, layout
+        box = paragraph.box
+        try:
+            bottom = self.get_max_bottom_space(box, page) + 2
+            right = self.get_max_right_space(box, page) - 4
+        except Exception:
+            return scale, layout
+        if bottom >= box.y - 4 and right <= box.x2 + 4:
+            return scale, layout
+        if bottom < box.y - 4:
+            box.y = bottom
+        if right > box.x2 + 4:
+            box.x2 = right
+        retried, retried_layout = original(self, paragraph, page, units, 1.0, use_english_line_break, apply_layout)
+        return (retried, retried_layout) if retried > scale else (scale, layout)
+
+    find._jadense_reflow = True
+    typesetting._find_optimal_scale_and_layout = find
+
+
 def install_adapter(high_level, config, emit):
     """只替换当前 worker 进程的引擎入口，不改写 site-packages。"""
     from babeldoc.format.pdf.document_il.midend.il_translator import ILTranslator, ParagraphTranslateTracker
@@ -560,6 +609,7 @@ def install_adapter(high_level, config, emit):
             config['_organized'] = sum(len(page.pdf_paragraph) for page in docs.page)
 
     high_level.ParagraphFinder = ReadingParagraphFinder
+    install_typesetting(high_level)
 
     class CapacityTranslator:
         def __init__(self, translator, translation_config):
@@ -857,14 +907,29 @@ def install_adapter(high_level, config, emit):
                     # 交给管线先保存已完成译文，worker 最后才发送终止错误。
                     raise
             # 原段在成功回填之前保持不变；不完整自然段全部保留原文。
-            translated = failed = 0
+            texts = []
             for page_index, page, paragraph, source_parts, tracker, prepared, parts in originals:
-                if not parts or not all(valid_output(part['text'], self.cache.get(part['id'])) for part in parts):
-                    failed += 1
-                    failed_pages.add(page_index)
-                    continue
-                text = ''.join(self.cache[part['id']] for part in parts)
-                if not valid_output(prepared.unicode, text):
+                text = None
+                if parts and prepared is not None and all(valid_output(part['text'], self.cache.get(part['id'])) for part in parts):
+                    candidate = ''.join(self.cache[part['id']] for part in parts)
+                    if valid_output(prepared.unicode, candidate):
+                        text = candidate
+                texts.append(text)
+            page_entries = {}
+            for position, entry in enumerate(originals):
+                page_entries.setdefault(entry[0], []).append(position)
+            for positions in page_entries.values():
+                for order, position in enumerate(positions[:-1]):
+                    later = texts[positions[order + 1]]
+                    if texts[position] is None or later is None:
+                        continue
+                    trimmed = trim_echoed_suffix(texts[position], later)
+                    if trimmed and valid_output(originals[position][5].unicode, trimmed):
+                        texts[position] = trimmed
+            translated = failed = 0
+            for position, (page_index, page, paragraph, source_parts, tracker, prepared, parts) in enumerate(originals):
+                text = texts[position]
+                if text is None:
                     failed += 1
                     failed_pages.add(page_index)
                     continue

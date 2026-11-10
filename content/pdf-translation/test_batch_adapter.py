@@ -8,13 +8,36 @@ from unittest.mock import patch
 from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
-from batch_adapter import batches, fits, prompt, parse_outputs, split_row, valid_output, install_adapter, ProviderFailure, LocalCheckpointError, merge_fragments, preserved, repeated_margins
+from batch_adapter import batches, fits, prompt, parse_outputs, split_row, valid_output, install_adapter, ProviderFailure, LocalCheckpointError, merge_fragments, preserved, repeated_margins, trim_echoed_suffix, install_typesetting
 
 BUDGET = dict(batchTokens=1600, contextWindow=16384, maxOutputTokens=8192)
 measure = lambda text: (len(text) + 2) // 3
 
 
 class BatchingTests(unittest.TestCase):
+    def test_echoed_next_passage_is_removed_before_layout(self):
+        later = '位姿。这种停顿本质上不平滑。' + '后续说明。' * 10
+        text = '<b1>异步生成。' + '前文。' * 10 + later
+        trimmed = trim_echoed_suffix(text, later)
+        self.assertEqual(trimmed, '<b1>异步生成。' + '前文。' * 10)
+        self.assertIsNone(trim_echoed_suffix(trimmed, later))
+        self.assertIsNone(trim_echoed_suffix('<b1>短句。', later))
+
+    def test_low_scale_layout_reclaims_same_page_space_and_retries_larger(self):
+        calls = []
+        class Typesetting:
+            def get_max_bottom_space(self, box, page): return box.y - 30
+            def get_max_right_space(self, box, page): return box.x2
+            def _find_optimal_scale_and_layout(self, paragraph, page, units, initial_scale=1.0, use_english_line_break=True, apply_layout=False):
+                calls.append(initial_scale)
+                return (0.65 if paragraph.box.y >= 40 else 0.9), None
+        install_typesetting(SimpleNamespace(Typesetting=Typesetting))
+        box = SimpleNamespace(y=40, x2=100)
+        scale, _ = Typesetting()._find_optimal_scale_and_layout(SimpleNamespace(box=box), None, [])
+        self.assertEqual(scale, 0.9)
+        self.assertEqual(box.y, 12)
+        self.assertEqual(calls, [1.0, 1.0])
+
     def test_publisher_radical_fonts_are_formula_fonts_without_capturing_text_ligatures(self):
         from batch_adapter import formula_font_pattern
         from babeldoc.format.pdf.document_il.utils.formular_helper import is_formulas_font

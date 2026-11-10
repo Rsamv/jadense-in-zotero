@@ -1,5 +1,16 @@
 # 更新说明 / Changelog
 
+## 0.6.14.2 — 2026-11-10
+
+- **双栏 PDF 的译文重复段与 5.5pt 字号**：模型偶尔把下一段并进上一段的译文（第 5 页「位姿。这种停顿…」整段在上一段末尾又出现一次），超长译文只能缩到原框的 0.65 倍，8.5pt 变 5.5pt。现在回填前逐页比对相邻段：只有后段译文已独立存在、且确实等于前段结尾时才裁掉重复结尾，随后按正常字号排版；缓存译文直接复用，重排不消耗翻译请求。
+- **译文仍在本页原位置，但可占用同页空栏**：一段译文在原框内只能缩到 0.7 倍以下时，先向本页同栏下方（到最近段落／图之前）和右侧（到栏边）扩出空间，再从 1.0 重算字号；扩完仍不够才退回原字号。不跨页、不跨栏搬动译文，「本页译文在本页对应位置显示」的规则不变。
+- 实测 20 页期刊（Perceptive humanoid motion from simulation）：第 5 页重复串数为 0，正文回到 8.5pt，页内 5.3pt 只剩图内标签；第 2 页同样清掉一处 5.5pt 重复；全篇越界 0 处，与旧输出相比没有新增文字重叠。图内小标签仍按中文 85% 缩放（中文同字号显大），这是有意的。
+- **没有「译文字号」设置项**：阅读器里的「译文缩放」只改显示比例，不改生成 PDF 的内嵌字号；影响字号的只有中文 85% 规则和「原文框放不下时按比例缩小」。本版让后者优先借用同页空白，不再一压到底。
+- Fixed duplicated passages and 5.5pt text in two-column PDFs: the model occasionally merged the next passage into the previous translation, so that oversized paragraph had to shrink to 0.65× (8.5pt → 5.5pt) and the same text appeared twice. Before writing back, adjacent rows on the same page are compared and an echoed tail is trimmed only when the later passage exists independently and exactly matches the earlier ending; cached translations are reused, so re-layout costs no extra translation request.
+- Translations stay on their own page at the source position, but may use free space on that page: when a paragraph would have to shrink below 0.7× inside its original box, the box is first extended downward (to the nearest paragraph/figure) and rightward (to the column edge) within the same page, then the scale is recomputed from 1.0; the original scale is kept only if the retry still does not fit. Nothing moves to another page or column.
+- Measured on the 20-page journal PDF: page 5 has zero repeated passages, body text is back to 8.5pt, and the only 5.3pt spans left are figure labels; page 2 loses its 5.5pt duplicate as well. All 20 pages: no out-of-page text and no new text overlap versus the old output. Figure labels still use the 85% Chinese sizing on purpose.
+- There is no font-size setting for translations: the reader's translation zoom only changes display scale, not the embedded font in the generated PDF. The only font-size rules are the 85% Chinese factor and box fitting; this version makes fitting borrow same-page whitespace instead of shrinking to the floor.
+
 ## 0.6.14.1 — 2026-11-10
 
 - 基线升级到官方 **v0.6.14**（证据溯源、来源列表、三步互动入门与统一离线安装帮助全部并入），本地收藏夹快速解析、本机证据、深读与对照翻译增强保持不变。
