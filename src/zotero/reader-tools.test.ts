@@ -1,4 +1,4 @@
-import { stopAnalysisRuntime } from './analysis-runtime'
+import { analysisRuntime, stopAnalysisRuntime } from './analysis-runtime'
 import { openChatSidebar } from './reader-sidebar'
 import { readOCRSelection, OCR_SELECTION_PREF } from './local-ocr'
 import { wireJadenseMode } from './jadense-mode-ui'
@@ -6,6 +6,8 @@ vi.mock('./local-ocr', async original => ({ ...await original<typeof import('./l
 vi.mock('./reader-sidebar', () => ({ openChatSidebar: vi.fn(async () => {}), removeReaderDock: vi.fn() }))
 // 合成 Zotero 9 阅读器契约测试，不读取真实文库；验证坐标绑定、写入隔离和原生工具条生命周期。
 import { beforeEach, describe, expect, it, vi } from "vitest"
+// 原生工具交互不消费模型目录响应；真实目录冷启动另由容量接缝与XPI验收覆盖。
+vi.mock('./model-catalog', async original => ({ ...await original<typeof import('./model-catalog')>(), refreshModelCatalog: async () => {} }))
 import { initializeUiLocale, saveTheme, THEME_PREF, DISPLAY_LANGUAGE_PREF } from "./ui-preferences"
 beforeEach(() => { initializeUiLocale({ locale: "zh-CN" }); vi.mocked(openChatSidebar).mockReset().mockResolvedValue(undefined) })
 import { readArticleTranslationLanguages, writeArticleTranslationLanguages } from "./translation-settings"
@@ -197,14 +199,14 @@ describe("Zotero PDF analysis snapshot", () => {
     expect(snapshot.coverage.warnings.join(" ")).toContain("第 2 页")
   })
 
-  it("bounds long documents without silently dropping the final conclusions", async () => {
+  it("extracts every readable page before model-aware input planning", async () => {
     const fixture = host(Array.from({ length: 96 }, (_, index) => page(`This is a supported sentence from physical page ${index + 1}.`)))
     const snapshot = await readPdfForAnalysis(fixture.zotero, 11)
-    expect(fixture.pdf.getPageData).toHaveBeenCalledTimes(80)
+    expect(fixture.pdf.getPageData).toHaveBeenCalledTimes(96)
     expect(snapshot.passages[0].pageIndex).toBe(0)
     expect(snapshot.passages.at(-1)!.pageIndex).toBe(95)
-    expect(snapshot.coverage).toMatchObject({ pagesRead: 80, totalPages: 96, limited: true })
-    expect(snapshot.coverage.warnings.join(" ")).toContain("未读取全部正文")
+    expect(snapshot.coverage).toMatchObject({ pagesRead: 96, totalPages: 96, limited: false })
+    expect(snapshot.coverage.warnings).toEqual([])
   })
 
   it("stops promptly while native extraction is pending", async () => {
@@ -1104,6 +1106,12 @@ describe("native reader toolbars", () => {
     const buttons = actionButtons(toolbar)
     expect(buttons.map((button) => button.attributes.get("aria-label"))).toEqual(["发起新对话，向 AI 提问（当前文献）", "解析文献", "引用选文"])
     expect(buttons.map((button) => button.children[1].textContent)).toEqual(["提问", "解析", "引用"])
+    const runtime = analysisRuntime(fixture.zotero as never)
+    const getRun = vi.spyOn(runtime, 'get').mockReturnValue({ source: { itemID: 11, libraryID: 1, itemKey: 'PDF11', title: 'Paper', authors: [] }, message: 'Paused', busy: false, resumable: true, createdAt: new Date().toISOString() })
+    runtime.stop(11)
+    expect(buttons[1].attributes.get('aria-label')).toBe('继续解析')
+    expect(buttons[1].children[1].textContent).toBe('继续解析')
+    getRun.mockRestore()
     expect(descendants(toolbar).some(node => node.attributes.has("data-jadense-article-languages"))).toBe(false)
     expect(buttons[0].title).toBe("Jadense · 发起新对话，向 AI 提问（当前文献）")
     buttons[0].handlers.get("click")!()

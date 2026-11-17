@@ -1,5 +1,42 @@
 # 更新说明 / Changelog
 
+## 0.6.17.1 — 2026-11-17
+
+- 基线升级到官方 **v0.6.17**，并入 0.6.15（模型容量与原生设置）、0.6.16（重新解析）与 0.6.17（长文批注与 Windows 引擎安装诊断）。收藏夹快速解析、本机证据与单篇深读、译文自动保存与按文献标题命名、双栏译文防重复/不过页修复保持不变。
+- Base upgraded to official **v0.6.17**, merging 0.6.15 (model capacity and native settings), 0.6.16 (reanalyze) and 0.6.17 (long-paper annotations and Windows engine setup diagnostics). The collection quick review, local evidence and deep read, translation auto-save with literature-title naming, and the two-column duplicate/font-size fixes are retained.
+
+## 0.6.17 — 2026-11-16
+
+- 长文已逐段解析完毕后，即使最后的汇总失败，也会保留完整分段笔记，并写入能与原文核对的批注。
+- 文献解析不再固定最多 32 条批注。现在可按内容自动选择，也可在设置中填写整篇论文的建议数量。
+- 改进 Windows 上的 OCR 与 PDF 版面引擎准备流程，能更清楚地区分安装包损坏、系统依赖和模型缺失。
+- 停用独立的全文提取入口。旧的 Markdown 仍可阅读、复制；查看历史不会重新启动提取或 OCR。
+
+- When every source batch has finished, a failed final summary no longer prevents delivery of the complete batch notes and annotations verified against the text.
+- Paper analysis no longer caps annotations at 32. Leave the count automatic or suggest a number for the whole paper.
+- Windows OCR and PDF layout setup now distinguishes a damaged archive from missing system dependencies or models.
+- Standalone full-text extraction has been retired. Saved Markdown remains readable and copyable without starting extraction or OCR.
+
+## 0.6.16 — 2026-11-16
+
+- 新增「重新解析」：卡住或未完成的任务可由用户主动放弃继续，使用当前模型创建全新解析请求。
+- 将恢复未完成任务的入口统一为「继续解析」，与重新生成明确区分；旧任务放弃后不会在重启或配置变化时自动恢复。
+- 保留已有解析笔记与批注，重新解析前提示可能再次消耗积分，并改善窄侧栏、大字号和浅深色下的操作布局。
+- Add Reanalyze: explicitly leave a stuck or unfinished task and start a fresh analysis request with the current model.
+- Label unfinished-task recovery as Continue analysis. Abandoned tasks no longer resume after restart or configuration changes.
+- Retain saved notes and annotations, explain possible new charges before reanalysis, and improve action layout in narrow sidebars, enlarged text and light/dark themes.
+
+## 0.6.15 — 2026-11-12
+
+- 对话、文献解析与翻译按所选模型的上下文容量和输出预算安排输入；解析按容量分批处理可读全文，并保存分批进度。
+- 长消息和关联来源正文完整保存在本机，请求时选取适合本轮问题的材料；覆盖不足会提示，旧版已经截断的内容无法自动恢复。
+- 修复 Zotero 原生设置的布局、滚动、关闭后重开与 OCR 进度显示，改善中英文、大字号及 BYOK 思考档位弹层。
+- 统一阅读器、工作台和原生侧栏的 Jadense Logo，改善浅深主题下的图标一致性。
+- Plan chat, analysis and translation input around the selected model's context and output budgets. Analysis processes readable text in batches and retains batch progress.
+- Keep long messages and linked source text locally in full, selecting material for the current question and reporting incomplete coverage. Text already truncated by older versions cannot be recovered automatically.
+- Fix native Zotero settings layout, scrolling, reopening and OCR progress; improve Chinese/English, enlarged text and BYOK thinking controls.
+- Unify the Jadense logo across the Reader, workspace and native sidebar, improving consistency in light and dark themes.
+
 ## 0.6.14.2 — 2026-11-10
 
 - **双栏 PDF 的译文重复段与 5.5pt 字号**：模型偶尔把下一段并进上一段的译文（第 5 页「位姿。这种停顿…」整段在上一段末尾又出现一次），超长译文只能缩到原框的 0.65 倍，8.5pt 变 5.5pt。现在回填前逐页比对相邻段：只有后段译文已独立存在、且确实等于前段结尾时才裁掉重复结尾，随后按正常字号排版；缓存译文直接复用，重排不消耗翻译请求。

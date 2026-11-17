@@ -2,7 +2,7 @@
   <img src="content/icons/logo-padded.png" width="128" height="128" alt="Jadense Logo">
 </p>
 <h1 align="center">Jadense in Zotero（个人 fork）</h1>
-<p align="center">攻玉学术 Zotero 阅读插件的个人改版 · 基线官方 v0.6.14</p>
+<p align="center">攻玉学术 Zotero 阅读插件的个人改版 · 基线官方 v0.6.17</p>
 <p align="center">
   <a href="https://www.zotero.org/download/"><img src="https://img.shields.io/badge/Zotero-8%20%7C%209%20%7C%2010-bb2222" alt="Zotero 8 / 9 / 10"></a>
   <a href="https://github.com/Rsamv/jadense-in-zotero/releases/latest"><img src="https://img.shields.io/github/v/release/Rsamv/jadense-in-zotero" alt="fork release"></a>
@@ -11,11 +11,11 @@
 
 **简体中文** · [English](README.en.md)
 
-> **这是个人 fork，不是官方发布渠道。** 上游是 [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero)，本分支以官方 `v0.6.14` 为基线，叠加自用改动。原 README 里的第三方 API 中转站推广、赞助二维码、Star 增长图和攻玉网页端引导已整块移除，只保留与插件使用有关的内容；官方功能说明见上游仓库与其[使用指南](docs/usage-guide.md)。
+> **这是个人 fork，不是官方发布渠道。** 上游是 [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero)，本分支以官方 `v0.6.17` 为基线，叠加自用改动。原 README 里的第三方 API 中转站推广、赞助二维码、Star 增长图和攻玉网页端引导已整块移除，只保留与插件使用有关的内容；官方功能说明见上游仓库与其[使用指南](docs/usage-guide.md)。
 >
-> 许可证不变，仍是 [Jadense Non-Commercial License 1.0](LICENSE)：仅限个人非商业自用，免费分发，须保留原版权声明，改动已在 [CHANGELOG.md](CHANGELOG.md) 顶部的 `0.6.13.x` / `0.6.14.x` 条目逐轮标注，下游继承同样的非商业条件。
+> 许可证不变，仍是 [Jadense Non-Commercial License 1.0](LICENSE)：仅限个人非商业自用，免费分发，须保留原版权声明，改动已在 [CHANGELOG.md](CHANGELOG.md) 顶部的 `0.6.13.x` / `0.6.14.x` / `0.6.17.x` 条目逐轮标注，下游继承同样的非商业条件。
 >
-> 本机构建版本号用四段（本轮为 `0.6.14.2`），大于当轮官方、小于将来的官方 `0.6.15`。插件 ID 与包内 `update_url` 保持官方值，所以官方发布更高版本时，Zotero 自动更新会顶掉这里的构建——自用场景下这是预期行为；要长期留在改版上请关闭自动更新。
+> 本机构建版本号用四段（本轮为 `0.6.17.1`），大于当轮官方、小于将来的官方 `0.6.18`。插件 ID 与包内 `update_url` 保持官方值，所以官方发布更高版本时，Zotero 自动更新会顶掉这里的构建——自用场景下这是预期行为；要长期留在改版上请关闭自动更新。
 
 **在 Zotero 中读懂论文，并把「实际有什么」和「模型说什么」分开。**
 
@@ -24,8 +24,11 @@
 <!-- release-summary:start -->
 ## 上游版本基线
 
-本 fork 的代码基线是官方 v0.6.14。以下是它和它之前的官方正式版，功能差异以 [CHANGELOG.md](CHANGELOG.md) 为准：
+本 fork 的代码基线是官方 v0.6.17。以下是它和它之前的官方正式版，功能差异以 [CHANGELOG.md](CHANGELOG.md) 为准：
 
+- [v0.6.17](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.17) — 最后汇总失败仍可交付完整分段笔记；支持建议批注数量，改善 Windows 引擎安装诊断。
+- [v0.6.16](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.16) — 主动重新解析卡住任务，明确区分继续解析，保留已有成果。
+- [v0.6.15](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.15) — 按模型容量规划输入，完整保留本地长正文，修复原生设置并统一 Logo。
 - [v0.6.14](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.14) — 新增默认关闭的证据溯源（行内引用、来源列表与 PDF 定位）与三步互动入门；统一离线安装帮助。
 - [v0.6.13](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.13) — 文献解析与对照翻译保存进度并支持继续，新增阅读字号与译文缩放，明确 PDF 失效任务的重新翻译入口。
 - [v0.6.12](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.12) — 发现前沿分离首页、进行与结果，更新文献卡片和收藏操作，新增交集／并集检索与帮助。
@@ -34,7 +37,7 @@
 - [v0.6.9](https://github.com/jadense-ai/jadense-in-zotero/releases/tag/v0.6.9) — 新增简阅模式与主动翻译，改进模型思考档位与翻译进度反馈。
 <!-- release-summary:end -->
 
-## 与官方 v0.6.14 的功能差异
+## 与官方 v0.6.17 的功能差异
 
 ### 一、收藏夹快速解析窗口（官方没有这个功能）
 
@@ -89,7 +92,7 @@
 
 ## 版本命名
 
-包内版本是四段 `0.6.14.x`；从 `0.6.13` 基线起的本地轮次是 `0.6.13.1` → `0.6.13.13`，本轮的 `0.6.14.2` 与 GitHub Release 标签 `v0.25` 对应，之后 `v0.26`、`v0.27` 依次递增。每轮发布只保留最新一条 Release，旧的连同其标签一起删除，避免装到过期包。
+包内版本是四段 `0.6.17.x`；从 `0.6.13` 基线起的本地轮次是 `0.6.13.1` → `0.6.13.13`，`0.6.14.2` 与 GitHub Release 标签 `v0.25` 对应，本轮的 `0.6.17.1` 计划对应 `v0.26`。每轮发布只保留最新一条 Release，旧的连同其标签一起删除，避免装到过期包。
 
 ## 从源码构建与跟随官方更新
 
@@ -137,7 +140,7 @@ git merge upstream/main           # 冲突集中在 CHANGELOG.md、README 与 do
 
 ## English summary
 
-This is a **personal fork** of [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero), based on the official `v0.6.14`. The upstream README's third-party API reseller promotion, donation pages, star-history chart and web-app upsell sections have been removed; nothing was added in their place — no analytics, no redirect endpoints.
+This is a **personal fork** of [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero), based on the official `v0.6.17`. The upstream README's third-party API reseller promotion, donation pages, star-history chart and web-app upsell sections have been removed; nothing was added in their place — no analytics, no redirect endpoints.
 
 What this branch adds:
 
@@ -149,6 +152,6 @@ What this branch adds:
 - **Scan failures never masquerade as "found nothing"**: each paper carries a `scanOutcome`, so an unreadable attachment list says "attachment unavailable (retried next run)" instead of "read 0 pages, no links".
 - **Malformed JSON recovery** in three stages instead of losing the whole review to one unescaped quote.
 
-Deliberately unchanged: the BYOK non-idempotence fence (an unconfirmed execution that already produced output is never resent automatically — only once, after you check with the provider and explicitly authorise it), error projection limited to code／HTTP status／class name, one dispatch per batch review, the same billing destination as "paper analysis", and the official plugin ID and update URL. Package versions are four-segment (`0.6.14.2`); fork releases map as `v0.(10 + x)`, so `v0.23` is `0.6.13.13` and `v0.25` is `0.6.14.2`. Because the plugin ID and update feed stay official, an official release newer than this branch will replace these builds through Zotero's automatic update — turn automatic update off if you want to stay on the fork.
+Deliberately unchanged: the BYOK non-idempotence fence (an unconfirmed execution that already produced output is never resent automatically — only once, after you check with the provider and explicitly authorise it), error projection limited to code／HTTP status／class name, one dispatch per batch review, the same billing destination as "paper analysis", and the official plugin ID and update URL. Package versions are four-segment (`0.6.17.1`); fork releases map as `v0.(10 + x)`, so `v0.23` is `0.6.13.13`, `v0.25` is `0.6.14.2`, and the current build `0.6.17.1` is planned as `v0.26`. Because the plugin ID and update feed stay official, an official release newer than this branch will replace these builds through Zotero's automatic update — turn automatic update off if you want to stay on the fork.
 
 Licence is unchanged: Jadense Non-Commercial License 1.0 (personal non-commercial use, free redistribution with attribution, changes documented, downstream inherits the same terms). See [CHANGELOG.md](CHANGELOG.md) for the per-round diff against official.

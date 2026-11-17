@@ -2,6 +2,10 @@
 
 [返回 README](../README.md) · [Zotero 入门](zotero-guide.md) · [FAQ](faq.md)
 
+- [0.6.17.1 基线升级到官方 v0.6.17](#update-06171)
+- [0.6.17 长文批注与引擎安装](#update-0617)
+- [0.6.16 重新解析](#update-0616)
+- [0.6.15 模型容量与设置体验](#update-0615)
 - [0.6.14.2 双栏译文的重复段与字号修复](#update-06142)
 - [0.6.14.1 自动保存与命名修复](#update-06141)
 - [0.6.14 证据溯源与互动入门](#update-0614)
@@ -23,6 +27,81 @@
 - [0.6.2 更新提示与阅读入口](#release-062)
 - [0.6.10 引擎存储、BYOK 档位与升级](#update-0610)
 - [0.6.9 简阅、模型与翻译反馈](#simple-reading-069)
+
+<a id="update-06171"></a>
+
+## 0.6.17.1：基线升级到官方 v0.6.17（2026-11-17）
+
+- **上游并入**：基线升级到官方 **v0.6.17**，并入 0.6.15 的模型容量规划与原生设置修复、0.6.16 的「重新解析」、0.6.17 的长文批注与 Windows 引擎安装诊断。
+- **本地功能保持不变**：收藏夹快速解析窗口、本机证据与单篇深读、译文自动保存与按文献标题命名、双栏译文防重复与不过页修复全部保留。
+- 覆盖安装新版 XPI 即可；已有设置、本地历史与已安装引擎继续沿用。
+- Base upgraded to official **v0.6.17** (model capacity and native settings, reanalyze, long-paper annotations and Windows engine setup diagnostics); all fork features are retained.
+<a id="update-0617"></a>
+## 0.6.17 长文批注与引擎安装 / Annotations and engine setup
+
+### 操作与配置
+
+在 Zotero 插件设置或工作台的「文献解析」设置中填写批注建议数；留空时按内容选择。该数值只影响新任务，不是硬性上限。Windows 用户可在引擎设置中检测或准备环境，两份引擎仍分别导入。
+
+### 升级与兼容
+
+覆盖安装新版 XPI 即可；无需因本次更新重新下载已安装的引擎。原文尚未读完、用户主动停止或原文定位失败时，不会当作已完成写入。旧版本没有保存的批注无法补回。完整离线套装适用于 Windows x64。
+
+### 验证与下载
+
+开发阶段的汇总恢复与批注设置专项分别通过 208 项和 181 项测试（覆盖有重叠）；Windows x64 上验证了 OCR、PDF 版面推理及隔离 Zotero 设置页。未实测真实付费模型、ARM64 或干净系统中的 UAC 流程。
+
+[下载 XPI](https://github.com/jadense-ai/jadense-in-zotero/releases/download/v0.6.17/jadense-in-zotero-v0.6.17.xpi) · [Windows x64 完整离线 ZIP](https://github.com/jadense-ai/jadense-in-zotero/releases/download/v0.6.17/jadense-in-zotero-v0.6.17-windows-x64-offline.zip)。校验值见同版 DISTRIBUTION-SHA256SUMS。
+
+<a id="update-0616"></a>
+## 0.6.16 重新解析 / Reanalyze
+
+### 操作与配置
+
+在文献解析详情中，点击「继续解析」复用原任务进度；点击「重新解析」并确认后创建新任务。正在运行的任务需先停止。阅读器原「解析」按钮在存在未完成任务时显示「继续解析」。
+
+Reanalyze is available in analysis details after stopping active work. Continue analysis keeps the original task and progress; Reanalyze creates new task and request identities after confirmation.
+
+### 升级与兼容
+
+直接安装新版 XPI，保留账号、模型设置、引擎、已有笔记与批注。重新解析使用当前模型重新读取文献，不复用旧任务的请求身份；旧请求在服务端的执行和计费状态不会因此重置，也不承诺退还原请求积分。可能产生新模型费用。本次无需新增服务端部署或引擎安装。
+
+Install the new XPI over the existing version. Settings, engines, saved notes and annotations remain available. Reanalysis may incur new charges and does not reset the old request's server execution or billing state. No new server deployment or engine installation is required for this change.
+
+### 验证与下载
+
+复用开发阶段验证：116 项相关测试、TypeScript、定向 ESLint，以及 Windows / Zotero 原生隔离 profile 中的新任务身份、确认取消、继续原任务、冷启动恢复、浅深色窄栏与 150% 字号检查。中英文按钮与确认交互有 DOM 回归覆盖；其他系统、Zotero 8/9 和真实付费模型未实测。发行阶段仅核对正式包身份与传输结果，不重复功能测试。
+
+GitHub 提供 XPI、Windows x64 完整离线 ZIP、两份独立引擎及摘要。官网及自动更新、百度与夸克镜像使用同一正式 XPI；各渠道完成状态以发布回执为准。源码公开范围不含私有前沿追踪模块，官方完整发行包含该功能。
+
+
+<a id="update-0615"></a>
+## 0.6.15 模型容量与设置体验 / Model capacity and settings
+
+### 操作与配置
+
+在「设置 → 功能配置」选择各功能使用的模型。翻译预算留空时按可获取的模型能力自动规划；已有数字限额继续保留，可清空恢复自动。BYOK 模型可填写上下文窗口和输出上限。文献解析按可读原文和模型容量分批执行，分批处理可能产生多次调用及费用；查看覆盖提示并核对原文，不代表任意长文都能在一次请求中完整读取。
+
+原生 Zotero 设置使用独立页签和自然滚动，与工作台共享同一偏好数据。通过原有入口调整模型、主题和引擎配置即可，无需重新录入现有设置。完整离线 ZIP 解压后，在外置依赖配置中分别导入 PDF 与 OCR 引擎 ZIP；已安装且就绪的引擎无需重装。
+
+### 升级与兼容
+
+在 Zotero「工具 → 插件 → 齿轮 → 从文件安装插件」选择 `jadense-in-zotero-v0.6.15.xpi`，按提示重启。相同 .cn 插件身份保留已有设置和本地历史。Manifest 声明 Zotero 8.0–10.0.*；完整离线套装仅适用 Windows x64。官方完整包包含发现前沿，公开源码独立构建为基础版。AI 仍调用所选在线服务。
+
+攻玉 Auto 模型容量和平台输出预算需要配套服务端更新；本次只发布插件，不包含服务端部署，旧服务端环境不能据此保证这两项能力。具体模型与 BYOK 的本地容量规划可使用已知能力；目录暂不可用时不因缺失可选信息阻断普通功能。旧未确认的付费请求保留原执行身份，不因升级盲目重发。
+
+Jadense Auto capacity and platform output budgets require a matching server update, which is not deployed as part of this plugin release. Existing numeric translation limits remain manual until cleared. Old truncated text cannot be restored, and model capacity is estimated with headroom rather than guaranteed for every provider.
+
+### 验证与下载
+
+复用开发阶段记录：模型容量修复的 1596 项插件测试、相关静态与类型检查和 18 项隔离原生验证；品牌相关 136 项测试及原生验证；设置相关 90 项测试与中英文各 19 项最终宿主检查。原生环境覆盖 Windows 11 / Zotero 10.0.8（各记录范围不同），使用隔离 profile 和合成服务。未实测其他系统、Zotero 8/9、真实付费 Provider 或完整付费 PDF 翻译。既有综合 feature-settings 脚本与当前统一翻译模型界面不符，不能声称该旧套件通过。
+
+发行阶段仅核对 production/full 包身份、引擎匹配、摘要与渠道传输，不重复插件功能测试。正式标签与附件保持不可变。
+
+- [下载 XPI](https://github.com/jadense-ai/jadense-in-zotero/releases/download/v0.6.15/jadense-in-zotero-v0.6.15.xpi)
+- [下载 Windows x64 完整离线 ZIP](https://github.com/jadense-ai/jadense-in-zotero/releases/download/v0.6.15/jadense-in-zotero-v0.6.15-windows-x64-offline.zip)
+- [全部制品校验和](https://github.com/jadense-ai/jadense-in-zotero/releases/download/v0.6.15/DISTRIBUTION-SHA256SUMS)
+- [百度网盘](https://pan.baidu.com/s/1YXrqXBao6uEA2BZKz1WlTw?pwd=4sci)（提取码 4sci） · [夸克网盘](https://pan.quark.cn/s/15513357f57d?pwd=H2RJ)（提取码 H2RJ）
 
 <a id="update-06142"></a>
 

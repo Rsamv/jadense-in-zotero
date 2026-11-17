@@ -5,7 +5,6 @@ import type { PdfAnalysisSnapshot, SavedAnalysisAnnotations } from "./reader-too
 import type { ZoteroLike } from "./runtime"
 import { AUTO_FOLLOW_CHAT_MODEL_PREF_KEY } from "./ai-settings"
 import {
-  PAPER_ANALYSIS_MISSING_SUMMARY,
   paperAnalysisModelState,
   runIndependentPaperAnalysis,
 } from "./paper-analysis-runner"
@@ -140,7 +139,7 @@ describe("independent paper analysis", () => {
       `data: ${JSON.stringify({ type: "text-delta", delta: structured() })}\n\ndata: {"type":"finish"}\n\n`, { status: 200 }))
     await runIndependentPaperAnalysis({ zotero, itemID: 42, fetchImpl, signal: new AbortController().signal,
       services: { readPdf: async () => snapshot(), saveAnnotations: async () => emptySaved() } })
-    const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))
+    const body = JSON.parse(String(fetchImpl.mock.calls.find(([, init]) => init?.method === 'POST')?.[1]?.body))
     expect(body.clientContext).toEqual({ version: expect.any(String), feature: "analysis" })
     expect(body).toMatchObject(selection.kind === "route" ? { routeTier: "premium" } : { modelId: selection.kind === "model" ? "analysis-model" : "deepseek-v4-flash-vision-exp" })
     expect(body).not.toHaveProperty(selection.kind === "route" ? "modelId" : "routeTier")
@@ -157,9 +156,10 @@ describe("independent paper analysis", () => {
       expect(request.requireComplete).toBe(true)
       expect(request.responseFormat).toMatchObject({
         type: 'json_schema',
-        schema: { required: ['summary', 'sections', 'annotations'], properties: { annotations: { maxItems: 32 } } },
+        schema: { required: ['summary', 'sections', 'annotations'], properties: { annotations: { type: 'array' } } },
         fallback: 'text',
       })
+      expect((request.responseFormat?.schema.properties as Record<string, Record<string, unknown>>).annotations.maxItems).toBeUndefined()
       expect(request.messages[0]?.text).toContain("summary 是必填的独立顶层字符串")
       expect(request.messages[0]?.text).toContain("A Useful Paper")
       return structured("结构化总结")
@@ -213,7 +213,7 @@ describe("independent paper analysis", () => {
     expect(readPaperAnalysisHistory(zotero.Prefs!).records).toHaveLength(1)
   })
 
-  it("uses the local placeholder when a valid structured response omits summary", async () => {
+  it("fills a readable summary from existing structured sections without a failure placeholder", async () => {
     const { zotero } = fakeZotero({ token: "jdx_token" })
     const result = await runIndependentPaperAnalysis({
       zotero,
@@ -226,8 +226,8 @@ describe("independent paper analysis", () => {
         saveAnnotations: async () => emptySaved(),
       },
     })
-    expect(result.record.summary).toBe(PAPER_ANALYSIS_MISSING_SUMMARY)
-    expect(readPaperAnalysisHistory(zotero.Prefs!).records[0]?.summary).toBe(PAPER_ANALYSIS_MISSING_SUMMARY)
+    expect(result.record.summary).toBe('仍可结构化')
+    expect(readPaperAnalysisHistory(zotero.Prefs!).records[0]?.summary).toBe('仍可结构化')
   })
 
   it("continues annotation writing after history persistence fails", async () => {

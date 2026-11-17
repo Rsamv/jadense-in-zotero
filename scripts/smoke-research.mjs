@@ -2420,7 +2420,8 @@ async function runHarness(config, verifyAnalysisDetails, verifyTranslationSideba
     const preferenceSections = Array.from(preferencesWindow.document.querySelectorAll("[data-settings-section]"))
     await waitFor(() => preferencesWindow.getComputedStyle(preferenceSections[0]).display === "grid", "native Preferences stylesheet")
     assert(preferenceSections.length === 5
-      && preferenceSections[1].getBoundingClientRect().top > preferenceSections[0].getBoundingClientRect().bottom,
+      && preferenceSections.filter(section => !section.hidden).length === 1
+      && preferencesWindow.document.querySelectorAll('.jdx-pref-tabs [role="tab"]').length === 5,
     "Native Preferences lost feature, connection, or BYOK sections")
     assert(preferencesWindow.document.getElementById("jadense-in-zotero-byok-endpoint").textContent.endsWith("/chat/completions"),
       "Native Preferences did not share the saved BYOK endpoint")
@@ -2428,7 +2429,8 @@ async function runHarness(config, verifyAnalysisDetails, verifyTranslationSideba
       && preferencesWindow.document.querySelector(".jdx-pref-checkbox span").textContent.trim(),
     "Native Preferences did not preserve hidden edit state or option copy")
     await screenshot("native-preferences-jadense", preferencesWindow)
-    preferenceSections[3].scrollIntoView({ block: "start" })
+    preferencesWindow.document.getElementById('jadense-in-zotero-settings-tab-byok').click()
+    preferenceSections[4].scrollIntoView({ block: "start" })
     await Zotero.Promise.delay(150)
     await screenshot("native-preferences-byok", preferencesWindow)
     const savedByokBeforeTest = Zotero.Prefs.get("extensions.jadenseInZotero.byokConfig")
@@ -3327,7 +3329,7 @@ async function main() {
       translationFilesOnly: argv.includes('--translation-files-only'), pdfTranslationOnly: argv.includes('--pdf-translation-only'), pdfStatusOnly: argv.includes('--pdf-status-only'), pdfAI: argv.includes('--pdf-ai'), pdfPartial: argv.includes('--pdf-partial'), pdfViewerFixture: argValue(argv, '--pdf-viewer-fixture') ? path.resolve(argValue(argv, '--pdf-viewer-fixture')) : undefined, pdfEngineArchive: argValue(argv, '--pdf-engine-archive') ? path.resolve(argValue(argv, '--pdf-engine-archive')) : undefined, pdfEngineSettingsCheck: argv.includes('--pdf-engine-settings-check'), pdfEngineOnly: argv.includes('--pdf-engine-only'), pdfEngineSetupOnly: argv.includes('--pdf-engine-setup-only'),
       sidebarRecoveryOnly: argv.includes('--sidebar-recovery-only'), sidebarHostCollapseOnly: argv.includes('--sidebar-host-collapse-only'),
       classificationOnly: argv.includes('--classification-only'),
-      chatFilesOnly: argv.includes('--chat-files-only'), cloudOCROnly: argv.includes('--cloud-ocr-only'), featureSettingsOnly: argv.includes('--feature-settings-only'), engineStorageOnly: argv.includes('--engine-storage-only'), engineStorageParent: argValue(argv, '--engine-storage-parent'),
+      chatFilesOnly: argv.includes('--chat-files-only'), cloudOCROnly: argv.includes('--cloud-ocr-only'), settingsSimplificationOnly: argv.includes('--settings-simplification-only'), featureSettingsOnly: argv.includes('--settings-simplification-only') || argv.includes('--feature-settings-only') || argv.includes('--analysis-annotation-settings-only'), analysisAnnotationSettingsOnly: argv.includes('--analysis-annotation-settings-only'), engineStorageOnly: argv.includes('--engine-storage-only'), engineStorageParent: argValue(argv, '--engine-storage-parent'),
       analysisRuntimeOnly: argv.includes('--analysis-runtime-only'), diagnosticsOnly: argv.includes('--diagnostics-only'), selectionOnly: argv.includes('--selection-only'), modelToastOnly: argv.includes('--model-toast-only'), literatureOnly: argv.includes('--literature-only'), ocrOnly: argv.includes('--ocr-only'), chatSidebarOnly: argv.includes("--chat-sidebar-only"), shellOnly: argv.includes("--shell-only"), titlebarOnly: argv.includes("--titlebar-only"), screenshots: argv.includes("--screenshots"), screenshotDir: smokeRoot, appearanceLanguage, documentsOnly: argv.includes("--documents-only"), analysisOnly: argv.includes("--analysis-only"), sidebarOnly: argv.includes("--sidebar-only"), documentRestart: argv.includes("--document-restart"), glassProbe: argv.includes("--glass-probe"),
     }
     await writeCompanion(extensionsDir, companionConfig)
@@ -3471,15 +3473,15 @@ async function main() {
       report.checks.push(...resumed.checks)
     }
     if (stub.failures.length) throw new Error(stub.failures.join("\n"))
-    if (argv.includes('--sidebar-recovery-only')) {
+    if (argv.includes('--sidebar-recovery-only') || companionConfig.settingsSimplificationOnly) {
       if (stub.requests.some(request => !['model-catalog', 'account-profile', 'points-status'].includes(request.kind))) throw new Error('Sidebar recovery dispatched a business request')
       report.checks.push('no-generation-or-upload-request')
     }
-    if (!argv.includes('--literature-only') && !argv.includes('--engine-storage-only') && !argv.includes('--simple-reading-only') && !argv.includes('--simple-reading-interruption-only') && !argv.includes('--pdf-translation-only') && !argv.includes('--sidebar-recovery-only') && !argv.includes('--chat-files-only') && !argv.includes('--diagnostics-only') && !argv.includes('--selection-only') && !argv.includes("--shell-only") && !argv.includes("--chat-sidebar-only") && !appearanceLanguage && !argv.includes("--documents-only") && (stub.requests.filter((request) => request.kind === "upload-metadata").length !== 2
+    if (!companionConfig.featureSettingsOnly && !argv.includes('--literature-only') && !argv.includes('--engine-storage-only') && !argv.includes('--simple-reading-only') && !argv.includes('--simple-reading-interruption-only') && !argv.includes('--pdf-translation-only') && !argv.includes('--sidebar-recovery-only') && !argv.includes('--chat-files-only') && !argv.includes('--diagnostics-only') && !argv.includes('--selection-only') && !argv.includes("--shell-only") && !argv.includes("--chat-sidebar-only") && !appearanceLanguage && !argv.includes("--documents-only") && (stub.requests.filter((request) => request.kind === "upload-metadata").length !== 2
       || stub.requests.filter((request) => request.kind === "upload-pdf").length !== 1)) {
       throw new Error("Expected two metadata uploads and exactly one multipart PDF; missing or disabled PDFs must not dispatch files")
     }
-    if (!argv.includes('--literature-only') && !argv.includes('--engine-storage-only') && !argv.includes('--simple-reading-only') && !argv.includes('--simple-reading-interruption-only') && !argv.includes('--pdf-translation-only') && !argv.includes('--sidebar-recovery-only') && !argv.includes('--chat-files-only') && !argv.includes('--diagnostics-only') && !argv.includes('--selection-only') && !argv.includes("--shell-only") && !argv.includes("--chat-sidebar-only") && !appearanceLanguage && !argv.includes("--documents-only") && (stub.requests.filter((request) => request.kind === "analysis-jadense").length !== 3
+    if (!companionConfig.featureSettingsOnly && !argv.includes('--literature-only') && !argv.includes('--engine-storage-only') && !argv.includes('--simple-reading-only') && !argv.includes('--simple-reading-interruption-only') && !argv.includes('--pdf-translation-only') && !argv.includes('--sidebar-recovery-only') && !argv.includes('--chat-files-only') && !argv.includes('--diagnostics-only') && !argv.includes('--selection-only') && !argv.includes("--shell-only") && !argv.includes("--chat-sidebar-only") && !appearanceLanguage && !argv.includes("--documents-only") && (stub.requests.filter((request) => request.kind === "analysis-jadense").length !== 3
       || stub.requests.filter((request) => request.kind === "analysis-byok").length !== 1
       || stub.requests.filter((request) => request.kind === "translation").length !== 3
       || stub.requests.filter((request) => request.kind === "markdown").length !== 1
