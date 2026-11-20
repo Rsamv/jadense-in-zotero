@@ -1481,10 +1481,12 @@ export function registerReaderTools(
         stop.addEventListener('click', () => runtime.stop(event.reader.itemID))
         const update = () => {
           const run = runtime.get(event.reader.itemID)
-          brand.dataset.runtime = run ? run.retrying ? 'retrying' : run.busy ? 'running' : run.error ? 'error' : run.resumable ? 'paused' : 'complete' : 'idle'
+          const dismissed = Boolean(run?.dismissed) && !run?.busy && !run?.retrying
+          brand.dataset.runtime = run ? run.retrying ? 'retrying' : run.busy ? 'running' : dismissed ? 'idle' : run.error ? 'error' : run.resumable ? 'paused' : 'complete' : 'idle'
           brand.setAttribute('aria-busy', String(Boolean(run?.busy)))
           stateLabel.textContent = run ? run.busy ? run.message.replace('已收到 ', '').replace(' 字符', ' 字').replace('characters received', 'chars')
             : run.retrying ? uiText('等待恢复 · 查看详情', 'Waiting to resume · Details')
+              : dismissed ? ''
               : run.error ? uiText('解析异常 · 查看详情', 'Analysis issue · Details')
                 : run.resumable ? uiText('解析已暂停 · 继续', 'Analysis paused · Continue') : uiText('查看解析', 'View analysis') : ''
           brand.title = run ? `${run.message} · ${uiText('点击查看', 'Click to view')}` : uiText('打开攻玉工作台', 'Open Jadense workspace')
@@ -1533,7 +1535,8 @@ export function registerReaderTools(
         if (action.kind === 'analyze') {
           const runtime = analysisRuntime(zotero as unknown as ZoteroLike)
           const updateLabel = () => {
-            const continuing = Boolean(runtime.get(event.reader.itemID)?.resumable)
+            const run = runtime.get(event.reader.itemID)
+            const continuing = Boolean(run?.resumable && !run.dismissed)
             const text = continuing ? uiText('继续解析', 'Continue analysis') : action.label
             label.textContent = continuing ? text : type === 'renderToolbar' ? action.short : text
             button.title = `Jadense · ${text}`; button.setAttribute('aria-label', text)

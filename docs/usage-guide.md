@@ -2,6 +2,8 @@
 
 [返回 README](../README.md) · [Zotero 入门](zotero-guide.md) · [FAQ](faq.md)
 
+- [0.6.18.1 解析失败提示可关闭](#update-06181)
+- [0.6.18 免密钥机器翻译](#update-0618)
 - [0.6.17.1 基线升级到官方 v0.6.17](#update-06171)
 - [0.6.17 长文批注与引擎安装](#update-0617)
 - [0.6.16 重新解析](#update-0616)
@@ -27,6 +29,38 @@
 - [0.6.2 更新提示与阅读入口](#release-062)
 - [0.6.10 引擎存储、BYOK 档位与升级](#update-0610)
 - [0.6.9 简阅、模型与翻译反馈](#simple-reading-069)
+
+<a id="update-06181"></a>
+## 0.6.18.1 解析失败提示可关闭 / Dismissible failure notice
+
+### 操作与配置
+
+解析失败后，侧边栏和解析详情里的「解析未完成」卡片右上角有 `×`。点击后卡片立即收起，阅读器工具条上的「解析异常 · 查看详情」同时消失；任务本身、已保存的解析结果和重试能力都不受影响。
+
+关闭状态保存在本机任务检查点里，重启 Zotero 后仍是关闭的。之后从阅读器工具条点击「解析」或工作台再次发起解析，会重新显示进度；如果再次失败，提示会重新出现。自动重试不会让已关闭的提示重新弹出。
+
+已有解析结果时，关闭交付错误提示后仍保留「重新解析」按钮，方便重新生成。
+
+### 升级与兼容
+
+覆盖安装新版 XPI 即可。基线同步到官方 **v0.6.18**（免密钥机器翻译扩展六种服务），本地功能保持不变。
+
+<a id="update-0618"></a>
+## 0.6.18 免密钥机器翻译 / Keyless machine translation
+
+### 操作与配置
+
+在 Zotero 的「功能配置」中打开「选文翻译」或「对照翻译」，选择「机器翻译」和所需服务。选用在线服务会把待翻译文本发送给该服务。LibreTranslate 需要先在 `127.0.0.1:5000` 启动免密钥实例并安装对应语言模型。服务可用性取决于网络和服务端限制。
+
+### 升级与兼容
+
+覆盖安装新版 XPI 即可。既有 Bing、Google 设置和已保存的译文继续可用。完整离线套装适用于 Windows x64，其中的 PDF 与 OCR 引擎沿用上一版。
+
+### 验证与下载
+
+正式完整版 XPI 已通过制品校验。各新增翻译服务的线上联通性未在本次发布中复测。
+
+[下载 XPI](https://github.com/jadense-ai/jadense-in-zotero/releases/download/v0.6.18/jadense-in-zotero-v0.6.18.xpi) · [Windows x64 完整离线 ZIP](https://github.com/jadense-ai/jadense-in-zotero/releases/download/v0.6.18/jadense-in-zotero-v0.6.18-windows-x64-offline.zip)。校验值见同版 DISTRIBUTION-SHA256SUMS。
 
 <a id="update-06171"></a>
 

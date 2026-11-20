@@ -1,5 +1,22 @@
 # 更新说明 / Changelog
 
+## 0.6.18.1 — 2026-11-20
+
+- 基线升级到官方 **v0.6.18**，并入免密钥机器翻译扩展（Microsoft Edge、Google GTX、MyMemory 与本机 LibreTranslate）以及选文翻译、对照翻译的独立服务设置。收藏夹快速解析、本机证据与单篇深读、译文自动保存与按文献标题命名、双栏译文防重复/不过页修复保持不变。
+- 新增解析失败提示的关闭按钮：侧边栏与工作台的「解析未完成」卡片可一键关闭，关闭后阅读器工具条不再显示「解析异常 · 查看详情」。关闭状态随任务保存，重启 Zotero 后仍保持；只有用户主动继续或重新解析时才重新提示，自动重试不会让已关闭的卡片再次出现。
+- Base upgraded to official **v0.6.18**, merging the keyless machine-translation expansion (Microsoft Edge, Google GTX, MyMemory and local LibreTranslate) and separate service settings for selection and parallel translation. Fork features are retained.
+- Adds a close button to failed-analysis notices in the sidebar and workspace. Closing also clears the reader toolbar's "Analysis issue" label, persists across Zotero restarts, and only reappears after an explicit continue or reanalyze — automatic retries never reopen a dismissed notice.
+
+## 0.6.18 — 2026-11-18
+
+- 免密钥机器翻译新增 Microsoft Edge、Google GTX、MyMemory 和本机 LibreTranslate，保留 Bing 与 Google。
+- 选文翻译和对照翻译可分别选服务。简阅与 Markdown 全文翻译沿用对照翻译的设置。
+- 长文本会按所选服务的长度限制切分，保留段落顺序和已有翻译进度。
+
+- Keyless machine translation now supports Microsoft Edge, Google GTX, MyMemory, and local LibreTranslate alongside Bing and Google.
+- Choose separate services for selection and parallel translation. Simple Reading and full-text Markdown translation use the parallel translation setting.
+- Long text is split to fit each service's limits while preserving paragraph order and existing translation progress.
+
 ## 0.6.17.1 — 2026-11-17
 
 - 基线升级到官方 **v0.6.17**，并入 0.6.15（模型容量与原生设置）、0.6.16（重新解析）与 0.6.17（长文批注与 Windows 引擎安装诊断）。收藏夹快速解析、本机证据与单篇深读、译文自动保存与按文献标题命名、双栏译文防重复/不过页修复保持不变。

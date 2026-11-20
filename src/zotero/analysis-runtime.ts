@@ -27,11 +27,12 @@ function issueMessage(issue: ReturnType<typeof requestIssue>) {
   return uiText('解析尚未完成，已保留进度；可继续任务或检查设置。', 'Analysis is unfinished and progress is retained. Continue the task or check settings.') + (issue.code ? ` (${issue.code})` : '')
 }
 /** 完成回调与冷启动共用状态投影；阅读范围等可选提示不改变执行状态。 */
-function analysisViewState(task: AnalysisTask): Pick<AnalysisRunView, 'busy' | 'resumable' | 'retrying' | 'error' | 'message'> {
+function analysisViewState(task: AnalysisTask): Pick<AnalysisRunView, 'busy' | 'resumable' | 'retrying' | 'error' | 'message' | 'dismissed'> {
   const deliveryError = typeof task.deliveryError === 'string' ? task.deliveryError.trim() : ''
   return {
     busy: task.status === 'running', resumable: task.status !== 'complete', retrying: task.status === 'waiting',
     error: task.status === 'needs_action' || task.status === 'complete' && Boolean(deliveryError),
+    dismissed: Boolean(task.dismissed),
     message: task.status === 'complete' ? deliveryError || uiText('解析完成，总结与笔记已保存。', 'Analysis complete. Summary and notes saved.')
       : task.status === 'paused' ? uiText('解析已暂停，继续将复用已完成内容。', 'Analysis paused. Continue to reuse completed work.')
       : task.status === 'waiting' ? deliveryError || (task.issue ? issueMessage(task.issue) : uiText('正在等待恢复；已完成内容保留，无需重新解析。', 'Waiting to recover; completed work is retained.'))
@@ -111,6 +112,17 @@ export class AnalysisRuntime {
     if (task.record) this.retained.set(task.record.id, task.record)
     return saved
   }
+  /** 用户关闭失败提示：持久记下本次已读，不改变任务状态、重试或计费身份。 */
+  dismiss(itemID: number) {
+    const task = [...this.tasks.values()]
+      .filter(task => task.itemID === itemID && task.status !== 'abandoned' && analysisViewState(task).error)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+    if (!task || task.dismissed) return
+    task.dismissed = true
+    this.show(task)
+    void this.save(task)
+    this.emit()
+  }
   /** 由启动流程显式调用；用户暂停不会在重启或打开视图时重新运行。 */
   async restore() {
     await this.ready
@@ -167,6 +179,8 @@ export class AnalysisRuntime {
       await this.ready
       const task = this.taskFor(itemID) ?? newAnalysisTask(itemID)
       this.tasks.set(task.id, task)
+      // 只有用户主动继续才重新显示提示；自动重试不得让已关闭的失败卡片再次出现。
+      if (!automatic) delete task.dismissed
       await this.cancellations.get(task.id)
       if (controller.signal.aborted) {
         task.pauseReason = controller.signal.reason === 'shutdown' || controller.signal.reason === 'configuration' ? controller.signal.reason : 'user'

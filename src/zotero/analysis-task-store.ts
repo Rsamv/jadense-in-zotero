@@ -23,6 +23,8 @@ export type AnalysisTask = {
   /** 已确认的历史/批注交付错误；与覆盖范围提示分离，冷启动仍可反馈。 */
   deliveryError?: string
   resumeRequested?: boolean
+  /** 用户已关闭该失败任务的提示；只影响展示，不改变任务状态与计费身份。 */
+  dismissed?: boolean
 }
 type IO = {
   makeDirectory(path: string, options: { ignoreExisting: boolean }): Promise<unknown>

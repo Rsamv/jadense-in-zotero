@@ -1265,3 +1265,27 @@ describe("native reader toolbars", () => {
     expect(() => registerReaderTools(broken, "test@jadense", vi.fn())).not.toThrow()
   })
 })
+
+it('clears the analysis issue label from the toolbar after the notice is dismissed', () => {
+  const fixture = host()
+  const register = vi.fn()
+  fixture.zotero.Reader!.registerEventListener = register
+  const cleanup = registerReaderTools(fixture.zotero, 'test@jadense', vi.fn())
+  const doc = new DocumentStub()
+  const append = vi.fn((node: ElementStub) => doc.body.append(node))
+  register.mock.calls[0][1]({ reader: fixture.reader, doc, append })
+  const toolbar = append.mock.calls[0][0] as ElementStub
+  const brand = toolbar.children[0]
+  const runtime = analysisRuntime(fixture.zotero as never)
+  const base = { source: { itemID: 11, libraryID: 2, itemKey: 'PDFKEY11', title: 'Synthetic paper', authors: [] },
+    message: '解析尚未完成，已保留进度；可继续任务或检查设置。(NETWORK_ERROR)', busy: false, error: true, resumable: true, createdAt: new Date().toISOString() }
+  const getRun = vi.spyOn(runtime, 'get').mockReturnValue({ ...base } as never)
+  runtime.stop(11)
+  expect(brand.dataset.runtime).toBe('error')
+  expect(brand.children[1].textContent).toBe('解析异常 · 查看详情')
+  getRun.mockReturnValue({ ...base, dismissed: true } as never)
+  runtime.stop(11)
+  expect(brand.dataset.runtime).toBe('idle')
+  expect(brand.children[1].textContent).toBe('')
+  getRun.mockRestore(); cleanup(); stopAnalysisRuntime(fixture.zotero)
+})

@@ -7,7 +7,7 @@ import { initializeUiLocale } from './ui-preferences'
 
 vi.mock('./document-jobs', () => ({ documentJobs: () => ({ list: () => [], get: () => undefined, subscribe: () => () => {}, ready: Promise.resolve() }) }))
 vi.mock('./reference-workspace', () => ({ mountReferenceDetails: () => ({ update: () => {}, suspend: () => {}, pause: () => {}, remove: () => {} }) }))
-const runtime = vi.hoisted(() => ({ start: vi.fn(), restart: vi.fn(), get: vi.fn() }))
+const runtime = vi.hoisted(() => ({ start: vi.fn(), restart: vi.fn(), get: vi.fn(), dismiss: vi.fn() }))
 vi.mock('./analysis-runtime', () => ({ analysisRuntime: () => runtime }))
 
 const sampling = '为控制解析长度，均匀选取 1200/4931 个可定位原句；结论仅基于这些原句。'
@@ -22,10 +22,10 @@ afterEach(() => {
 })
 
 /** 用隔离 DOM 挂载真实解析界面，仅替换无关引用任务和运行调度。 */
-function mount(record: PaperAnalysisRecord, unsaved = false) {
+function mount(record: PaperAnalysisRecord, unsaved = false, saved = true) {
   const dom = new JSDOM('<!doctype html><main></main>'), root = dom.window.document.querySelector('main')!
   const stop = vi.fn()
-  const workspace = mountAnalysisWorkspace(root, {}, { records: () => [record], unsaved: () => unsaved,
+  const workspace = mountAnalysisWorkspace(root, {}, { records: () => saved ? [record] : [], unsaved: () => unsaved,
     openSource: async () => true, stop, onReferenceTask: () => {} })
   workspace.open(record.source)
   disposals.push(() => { workspace.remove(); dom.window.close() })
@@ -106,6 +106,29 @@ describe('analysis warning visibility', () => {
     expect(banner.dataset.kind).toBe('error')
     expect(banner.querySelector('.jdx-analysis-status-title')?.textContent).toBe('解析未完成')
     expect(banner.querySelector<HTMLElement>('.jdx-analysis-run-actions')?.hidden).toBe(false)
+    expect(banner.querySelector<HTMLElement>('.jdx-detail-dismiss')?.hidden).toBe(false)
+  })
+
+  it('closes a failed run from the banner and stays closed after the dismissal persists', () => {
+    const fixture = record([]), { root, workspace } = mount(fixture, false, false)
+    workspace.setRun({ source: fixture.source, message: pageFailure, busy: false, error: true, createdAt: fixture.createdAt })
+    const banner = root.querySelector<HTMLElement>('.jdx-detail-run')!
+    const close = banner.querySelector<HTMLButtonElement>('.jdx-detail-dismiss')!
+    close.click()
+    expect(runtime.dismiss).toHaveBeenCalledWith(42)
+    workspace.setRun({ source: fixture.source, message: pageFailure, busy: false, error: true, dismissed: true, createdAt: fixture.createdAt })
+    expect(banner.hidden).toBe(true)
+    expect([...banner.querySelectorAll('button')].filter(button => !button.hidden)).toEqual([])
+  })
+
+  it('keeps the reanalyze action for a saved record after dismissing its delivery error', () => {
+    const fixture = record([]), { root, workspace } = mount(fixture)
+    workspace.setRun({ source: fixture.source, message: pageFailure, busy: false, error: true, dismissed: true, createdAt: fixture.createdAt })
+    const banner = root.querySelector<HTMLElement>('.jdx-detail-run')!
+    expect(banner.hidden).toBe(false)
+    expect(banner.querySelector<HTMLElement>('[role=status]')?.hidden).toBe(true)
+    const visible = [...banner.querySelectorAll('button')].filter(button => !button.hidden)
+    expect(visible.map(button => button.textContent)).toEqual(['重新解析'])
   })
 
   it.each(['zh-CN', 'en-US'])('only starts a new analysis after explicit confirmation in %s', locale => {

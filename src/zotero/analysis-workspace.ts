@@ -13,7 +13,7 @@ import { actionIcon, action, badge, bindTabs, element, notice } from "./ui/contr
 import { analysisRuntime } from './analysis-runtime'
 
 export type AnalysisDetailTab = "summary" | "notes" | "references"
-export type AnalysisRunView = { source: PaperAnalysisSource; message: string; busy: boolean; resumable?: boolean; error?: boolean; retrying?: boolean; references?: ReferencePreparation; referenceTaskID?: string; createdAt: string }
+export type AnalysisRunView = { source: PaperAnalysisSource; message: string; busy: boolean; resumable?: boolean; error?: boolean; retrying?: boolean; dismissed?: boolean; references?: ReferencePreparation; referenceTaskID?: string; createdAt: string }
 const timeText = (value: string) => new Date(value).toLocaleString(getUiLocale(), { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
 const metadataText = (source: PaperAnalysisSource) => [source.authors.join("、"), source.date || source.year, source.publicationTitle].filter(Boolean).join(" · ")
 /** 翻译固定展示标题，不改写已保存的模型正文或笔记备份。 */
@@ -44,7 +44,7 @@ export function mountAnalysisWorkspace(root: HTMLElement, host: ZoteroLike, opti
   const runs = new Map<string, AnalysisRunView>(), papers = new Map<string, AnalysisPaper>()
   const openedSources = new Map<string, PaperAnalysisSource>()
   const rows = new Map<string, { root: HTMLElement; title: HTMLButtonElement; meta: HTMLElement; preview: HTMLElement; state: HTMLElement; date: HTMLElement }>()
-  type Detail = { root: HTMLElement; title: HTMLElement; meta: HTMLElement; date: HTMLElement; warning: HTMLElement; status: HTMLElement; statusTitle: HTMLElement; statusDescription: HTMLElement; actions: HTMLElement; stop: HTMLButtonElement; resume: HTMLButtonElement; restart: HTMLButtonElement; summary: HTMLElement; notes: HTMLElement; tabs: HTMLButtonElement[]; panels: HTMLElement[]; active: AnalysisDetailTab; scrolls: number[]; signature: string; reference: ReturnType<typeof mountReferenceDetails>; cleanup(): void }
+  type Detail = { root: HTMLElement; title: HTMLElement; meta: HTMLElement; date: HTMLElement; warning: HTMLElement; status: HTMLElement; statusTitle: HTMLElement; statusDescription: HTMLElement; actions: HTMLElement; stop: HTMLButtonElement; resume: HTMLButtonElement; restart: HTMLButtonElement; dismiss: HTMLButtonElement; summary: HTMLElement; notes: HTMLElement; tabs: HTMLButtonElement[]; panels: HTMLElement[]; active: AnalysisDetailTab; scrolls: number[]; signature: string; reference: ReturnType<typeof mountReferenceDetails>; cleanup(): void }
   const details = new Map<string, Detail>()
   let selected: string | undefined, savedScroll = 0, disposed = false, detailSequence = 0
   const labels: Record<AnalysisDetailTab, string> = { summary: uiText("解析总结", "Summary"), notes: uiText("解析笔记", "Analysis notes"), references: uiText("参考文献", "References") }
@@ -108,7 +108,12 @@ export function mountAnalysisWorkspace(root: HTMLElement, host: ZoteroLike, opti
     actionIcon(restart, 'refresh')
     const actions = element(doc, 'div', 'jdx-analysis-run-actions')
     actions.setAttribute('role', 'group'); actions.setAttribute('aria-label', uiText('解析操作', 'Analysis actions'))
-    actions.append(resume, restart, stop); run.append(status, actions)
+    actions.append(resume, restart, stop)
+    const dismiss = element(doc, 'button', 'jdx-detail-dismiss', '×')
+    dismiss.type = 'button'
+    dismiss.title = uiText('关闭解析提示', 'Dismiss analysis notice'); dismiss.setAttribute('aria-label', dismiss.title)
+    dismiss.addEventListener('click', () => { analysisRuntime(host).dismiss(papers.get(key)!.source.itemID) })
+    run.append(status, actions, dismiss)
     const warning = notice(doc), tablist = element(doc, "div", "jdx-tabs jdx-detail-tabs")
     warning.classList.add('jdx-analysis-warning')
     tablist.setAttribute("role", "tablist"); tablist.setAttribute("aria-label", uiText("解析结果", "Analysis results"))
@@ -120,7 +125,7 @@ export function mountAnalysisWorkspace(root: HTMLElement, host: ZoteroLike, opti
     if (options.embedded) { nav.hidden = true; hero.hidden = true }
     if (options.hideTabs) { tablist.hidden = true; panels.forEach(panel => { panel.removeAttribute("role"); panel.removeAttribute("aria-labelledby") }) }
     const reference = mountReferenceDetails(panels[2], host, paper.source, task => { options.onReferenceTask(paper.source, task); refresh() })
-    const detail: Detail = { root: container, title, meta, date, warning, status, statusTitle, statusDescription, actions, stop, resume, restart, summary, notes, tabs, panels, active: "summary", scrolls: [0, 0, 0], signature: "", reference, cleanup: () => {} }
+    const detail: Detail = { root: container, title, meta, date, warning, status, statusTitle, statusDescription, actions, stop, resume, restart, dismiss, summary, notes, tabs, panels, active: "summary", scrolls: [0, 0, 0], signature: "", reference, cleanup: () => {} }
     const cleanup = bindTabs(tabs, i => selectTab(detail, tabNames[i]))
     detail.cleanup = () => { cleanup(); reference.remove() }
     details.set(key, detail); root.append(container); container.hidden = true; selectTab(detail, "summary", false)
@@ -134,14 +139,16 @@ export function mountAnalysisWorkspace(root: HTMLElement, host: ZoteroLike, opti
     if (!record) detail.date.textContent = run?.busy ? uiText('正在解析 · 可继续阅读', 'Analyzing · Keep reading') : ''
     const referencesRunning = Boolean(run?.references?.running || paper.references?.status === 'running')
     const working = Boolean(run?.busy || run?.retrying || referencesRunning)
-    const showStatus = working || Boolean(run?.error || run?.resumable)
+    const dismissed = Boolean(run?.dismissed)
+    const showStatus = working || Boolean(!dismissed && (run?.error || run?.resumable))
     detail.statusTitle.textContent = run?.busy || run?.retrying ? uiText('正在解析', 'Analysis in progress') : referencesRunning ? uiText('正在整理参考文献', 'Preparing references') : run?.error ? uiText('解析未完成', 'Analysis incomplete') : run?.resumable ? uiText('解析已暂停', 'Analysis paused') : ''
     detail.statusDescription.textContent = showStatus ? run?.message || (referencesRunning ? uiText('已有解析结果可继续阅读，参考文献正在后台整理。', 'You can read the saved analysis while references are prepared in the background.') : uiText('已有内容会保留，可继续阅读。', 'Existing content is retained and remains readable.')) : ''
-    detail.status.dataset.kind = run?.error ? 'error' : working ? 'running' : 'neutral'
+    detail.status.dataset.kind = run?.error && !dismissed ? 'error' : working ? 'running' : 'neutral'
     detail.status.parentElement!.dataset.kind = detail.status.dataset.kind
+    detail.dismiss.hidden = dismissed || working || !run?.error
     detail.stop.hidden = !working
-    detail.resume.hidden = !run?.resumable || run.busy || Boolean(run.retrying)
-    detail.restart.hidden = Boolean(run?.busy) || (!run && !record)
+    detail.resume.hidden = dismissed || !run?.resumable || run.busy || Boolean(run.retrying)
+    detail.restart.hidden = Boolean(run?.busy) || (dismissed && !record) || (!run && !record)
     detail.actions.hidden = detail.stop.hidden && detail.resume.hidden && detail.restart.hidden
     detail.status.hidden = !showStatus
     detail.status.parentElement!.hidden = !showStatus && detail.actions.hidden

@@ -202,3 +202,31 @@ it('persists retry timing so a cold runtime does not dispatch before backoff exp
     expect(resumed).toHaveBeenCalledOnce()
   } finally { await first.dispose(); await next?.dispose(); vi.useRealTimers() }
 })
+
+it('keeps a dismissed failure closed across reloads until the user continues', async () => {
+  const task = newAnalysisTask(42)
+  Object.assign(task, { status: 'needs_action', issue: { code: 'NETWORK_ERROR' } })
+  const saved = new Map([[task.id, structuredClone(task)]])
+  const host = { Prefs: { get: () => undefined } } as never
+  const context = async () => ({ account: 'synthetic-account', configuration: 'synthetic-model', route: 'jadense' as const })
+  const store = { list: async () => structuredClone([...saved.values()]),
+    save: async (value: AnalysisTask) => { saved.set(value.id, structuredClone(value)); return true } }
+  const run = vi.fn<typeof runIndependentPaperAnalysis>(async input => result(input.itemID))
+  const runtime = new AnalysisRuntime(host, run, { store, context })
+  await runtime.ready
+  expect(runtime.get(42)).toMatchObject({ error: true, dismissed: false })
+  runtime.dismiss(42)
+  expect(runtime.get(42)?.dismissed).toBe(true)
+  expect(saved.get(task.id)?.dismissed).toBe(true)
+
+  const cold = new AnalysisRuntime(host, vi.fn(), { store, context })
+  await cold.ready
+  expect(cold.get(42)?.dismissed).toBe(true)
+  await cold.dispose()
+
+  await runtime.start(42)
+  expect(run).toHaveBeenCalledOnce()
+  expect(saved.get(task.id)?.dismissed).toBeUndefined()
+  expect(runtime.get(42)?.dismissed).toBe(false)
+  await runtime.dispose()
+})
