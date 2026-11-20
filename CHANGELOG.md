@@ -1,5 +1,10 @@
 # 更新说明 / Changelog
 
+## 0.6.18.2 — 2026-11-20
+
+- 打开已有解析记录的文献时，详情顶部不再显示「重新解析」运行条；解析完成、已保存的状态下这一条完全隐藏，阅读笔记时不再被固定在顶部占用高度。解析中、已暂停或错误提示仍照常出现，重新解析仍可从阅读器工具条的「解析」发起。
+- Opening a paper that already has analysis records no longer shows the "Reanalyze" strip at the top of the detail view. The strip disappears completely for completed or saved results, so reading notes is not blocked by a pinned bar. In-progress, paused and error notices remain, and reanalysis is still available from the reader toolbar's "Analyze" action.
+
 ## 0.6.18.1 — 2026-11-20
 
 - 基线升级到官方 **v0.6.18**，并入免密钥机器翻译扩展（Microsoft Edge、Google GTX、MyMemory 与本机 LibreTranslate）以及选文翻译、对照翻译的独立服务设置。收藏夹快速解析、本机证据与单篇深读、译文自动保存与按文献标题命名、双栏译文防重复/不过页修复保持不变。

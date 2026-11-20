@@ -17,7 +17,7 @@
 >
 > The license is unchanged — [Jadense Non-Commercial License 1.0](LICENSE): personal non-commercial use only, distributed free of charge, original copyright notices retained, modifications identified in the `0.6.13.x` / `0.6.14.x` / `0.6.17.x` / `0.6.18.x` entries at the top of [CHANGELOG.md](CHANGELOG.md), and the same non-commercial conditions passed on downstream.
 >
-> Local versions use four segments (currently `0.6.18.1`), newer than the current official build but older than a future official `0.6.19`. The add-on ID and the packaged `update_url` keep the official values, so an official release newer than the local one replaces this fork's build through auto-update — intended for personal use, but anyone staying on the fork should disable automatic updates.
+> Local versions use four segments (currently `0.6.18.2`), newer than the current official build but older than a future official `0.6.19`. The add-on ID and the packaged `update_url` keep the official values, so an official release newer than the local one replaces this fork's build through auto-update — intended for personal use, but anyone staying on the fork should disable automatic updates.
 
 **Understand papers in Zotero, and turn what you read into the next step of your research.**
 
@@ -31,7 +31,7 @@ Jadense in Zotero is a source-available AI reading assistant from [Jadense (攻�
 
 The client is source-available under the [non-commercial license](LICENSE). Model usage is billed according to your chosen provider or your Jadense account's subscription and points rules.
 
-**This fork is at package version 0.6.18.1**, built on official `v0.6.18`. Rounds `0.6.13.1` through `0.6.13.13`, `0.6.14.1`/`0.6.14.2`, `0.6.17.1` and the current `0.6.18.1` are listed one by one at the top of [CHANGELOG.md](CHANGELOG.md); the sections below summarise what they add.
+**This fork is at package version 0.6.18.2**, built on official `v0.6.18`. Rounds `0.6.13.1` through `0.6.13.13`, `0.6.14.1`/`0.6.14.2`, `0.6.17.1`, `0.6.18.1` and the current `0.6.18.2` are listed one by one at the top of [CHANGELOG.md](CHANGELOG.md); the sections below summarise what they add.
 
 The baseline itself was verified by upstream on Windows 11 / Zotero 10.0.6. This fork has been run on the same pair with 35 real PDFs in a personal library; macOS, Linux, Zotero 8/9 and live paid providers were not tested.
 
@@ -96,7 +96,7 @@ Failed-analysis notices carry a close button in both the sidebar and the workspa
 
 ### 5. Release numbering
 
-Package versions are four-segment (`0.6.18.x`); local rounds from the `0.6.13` baseline run `0.6.13.1` → `0.6.13.13`, `0.6.14.2` maps to release tag `v0.25`, and the current `0.6.18.1` is planned as `v0.27`. Only the newest release is kept, together with its tag.
+Package versions are four-segment (`0.6.18.x`); local rounds from the `0.6.13` baseline run `0.6.13.1` → `0.6.13.13`, `0.6.14.2` maps to release tag `v0.25`, `0.6.18.1` to `v0.27`, and the current `0.6.18.2` is planned as `v0.28`. Only the newest release is kept, together with its tag.
 
 
 <a id="requirements"></a>
@@ -114,10 +114,10 @@ Package versions are four-segment (`0.6.18.x`); local rounds from the `0.6.13` b
 
 | Method | How | Notes |
 | --- | --- | --- |
-| [This fork's Releases](https://github.com/Rsamv/jadense-in-zotero/releases/latest) | Download the `.xpi`, then open it from Zotero **Tools → Plugins → gear → Install Plugin From File…** | Each release carries a `SHA256SUMS` file. The current build is `0.6.18.1` (release `v0.27` when published). Do not use the **Source code** archive as an installer |
+| [This fork's Releases](https://github.com/Rsamv/jadense-in-zotero/releases/latest) | Download the `.xpi`, then open it from Zotero **Tools → Plugins → gear → Install Plugin From File…** | Each release carries a `SHA256SUMS` file. The current build is `0.6.18.2` (release `v0.28` when published). Do not use the **Source code** archive as an installer |
 | Official channel | Install from [jadense-ai/jadense-in-zotero](https://github.com/jadense-ai/jadense-in-zotero/releases/latest) or the [official plugin page](https://jadense.cn/plugin/zotero) | Different code, same add-on ID `jadense-in-zotero@jadense.cn`; whichever you install last is the one Zotero keeps |
 | Zotero automatic update | In Zotero, open **Tools → Plugins → gear → Check for Updates** | The packaged `update_url` still points at the [official Jadense manifest](https://jadense.cn/plugins/zotero/jadense-in-zotero/updates.json), so an official release newer than this fork overwrites these builds. Disable automatic updates to stay on the fork |
-| Build from source | Follow the [contributor guide](CONTRIBUTING.md#开发与本机验证) with Node 24 and pnpm 10.19.0 | This branch's source builds `0.6.18.1`; the upstream release script rejects four-segment versions, so tags and artifacts are produced manually here |
+| Build from source | Follow the [contributor guide](CONTRIBUTING.md#开发与本机验证) with Node 24 and pnpm 10.19.0 | This branch's source builds `0.6.18.2`; the upstream release script rejects four-segment versions, so tags and artifacts are produced manually here |
 
 Do not enable the legacy `jadense-in-zotero@jadense.com` identity alongside the current one. See [upgrade instructions](#upgrade) for migration details.
 
@@ -185,7 +185,7 @@ The workbench supports both English and Simplified Chinese. The steps below also
 
 ### 1. Install and open the workbench
 
-1. Download the `.xpi` from [this fork's latest release](https://github.com/Rsamv/jadense-in-zotero/releases/latest) — currently **0.6.18.1** — and check it against the release's `SHA256SUMS`. If you have an older version installed, read the [upgrade instructions](#upgrade) first.
+1. Download the `.xpi` from [this fork's latest release](https://github.com/Rsamv/jadense-in-zotero/releases/latest) — currently **0.6.18.2** — and check it against the release's `SHA256SUMS`. If you have an older version installed, read the [upgrade instructions](#upgrade) first.
 2. In Zotero's plugin manager, choose the option to install a plugin from a file and select the XPI.
 3. Open the workbench from Zotero's Jadense entry and choose how to connect to a model service.
 

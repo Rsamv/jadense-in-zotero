@@ -148,7 +148,8 @@ export function mountAnalysisWorkspace(root: HTMLElement, host: ZoteroLike, opti
     detail.dismiss.hidden = dismissed || working || !run?.error
     detail.stop.hidden = !working
     detail.resume.hidden = dismissed || !run?.resumable || run.busy || Boolean(run.retrying)
-    detail.restart.hidden = Boolean(run?.busy) || (dismissed && !record) || (!run && !record)
+    // 已有解析记录的完成态不再占用详情顶部；重新解析仍可从阅读器工具条发起。
+    detail.restart.hidden = dismissed || !run || run.busy || (!run.error && !run.resumable)
     detail.actions.hidden = detail.stop.hidden && detail.resume.hidden && detail.restart.hidden
     detail.status.hidden = !showStatus
     detail.status.parentElement!.hidden = !showStatus && detail.actions.hidden

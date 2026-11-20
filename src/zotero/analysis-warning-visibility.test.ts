@@ -77,8 +77,8 @@ describe('analysis warning visibility', () => {
     expect(banner.querySelector('.jdx-analysis-status-description')?.textContent).not.toBe('')
     const actions = banner.querySelector<HTMLElement>('[role=group]')!
     const visible = [...actions.querySelectorAll('button')].filter(button => !button.hidden)
-    expect(visible.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['重新解析', '停止本次解析'] : ['Reanalyze', 'Stop analysis'])
-    visible[1].click()
+    expect(visible.map(button => button.textContent)).toEqual(locale === 'zh-CN' ? ['停止本次解析'] : ['Stop analysis'])
+    visible[0].click()
     expect(stop).toHaveBeenCalledWith(fixture.source)
     workspace.setRun({ source: fixture.source, message: 'Completed', busy: false, createdAt: fixture.createdAt })
     expect(banner.querySelector<HTMLElement>('[role=status]')?.hidden).toBe(true)
@@ -121,14 +121,20 @@ describe('analysis warning visibility', () => {
     expect([...banner.querySelectorAll('button')].filter(button => !button.hidden)).toEqual([])
   })
 
-  it('keeps the reanalyze action for a saved record after dismissing its delivery error', () => {
+  it('keeps the run strip out of the detail view when a saved record has no active task', () => {
+    const fixture = record([]), { root } = mount(fixture)
+    const banner = root.querySelector<HTMLElement>('.jdx-detail-run')!
+    expect(banner.hidden).toBe(true)
+    expect([...banner.querySelectorAll('button')].filter(button => !button.hidden)).toEqual([])
+    expect(root.querySelector('.jdx-analysis-summary')?.textContent).toContain(fixture.summary)
+  })
+
+  it('hides a dismissed delivery error entirely instead of keeping only the reanalyze button', () => {
     const fixture = record([]), { root, workspace } = mount(fixture)
     workspace.setRun({ source: fixture.source, message: pageFailure, busy: false, error: true, dismissed: true, createdAt: fixture.createdAt })
     const banner = root.querySelector<HTMLElement>('.jdx-detail-run')!
-    expect(banner.hidden).toBe(false)
-    expect(banner.querySelector<HTMLElement>('[role=status]')?.hidden).toBe(true)
-    const visible = [...banner.querySelectorAll('button')].filter(button => !button.hidden)
-    expect(visible.map(button => button.textContent)).toEqual(['重新解析'])
+    expect(banner.hidden).toBe(true)
+    expect([...banner.querySelectorAll('button')].filter(button => !button.hidden)).toEqual([])
   })
 
   it.each(['zh-CN', 'en-US'])('only starts a new analysis after explicit confirmation in %s', locale => {
